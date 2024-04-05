@@ -346,7 +346,7 @@ class Trainer:
                 fig.suptitle(f"epoch {epoch}")
                 fig.colorbar(im3, ax=axs[1])
                 fig_save_fol = (
-                    "/projectnb/tianlabdl/rjbona/training_visualization/"
+                    "/projectnb/tianlabdl/rjbona/sbrnet/training_visualization/"
                 )
                 fig_save_path = os.path.join(
                     fig_save_fol, f"{model_name}.png"
