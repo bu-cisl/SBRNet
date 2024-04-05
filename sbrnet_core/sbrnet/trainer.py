@@ -371,6 +371,7 @@ class Trainer:
                 fig_save_fol = (
                     "/projectnb/tianlabdl/rjbona/sbrnet/training_visualization/"
                 )
+                wandb.log({"Visualization": fig})
                 fig_save_path = os.path.join(
                     fig_save_fol, f"{model_name}.png"
                 )

@@ -23,7 +23,7 @@ echo "=========================================================="
 
 # Specify number of cores 16: a whole node with at least 128gb ram
 #$-pe omp 4
-#$-t 15
+#$-t 1
 
 #Specify the number of GPUs (1 is recommended!)
 #$-l gpus=1
