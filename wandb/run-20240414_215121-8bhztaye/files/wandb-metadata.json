@@ -1,0 +1,261 @@
+{
+    "os": "Linux-4.18.0-513.9.1.el8_9.x86_64-x86_64-with-glibc2.28",
+    "python": "3.10.12",
+    "heartbeatAt": "2024-04-15T01:51:21.501339",
+    "startedAt": "2024-04-15T01:51:21.170084",
+    "docker": null,
+    "cuda": null,
+    "args": [
+        "--model_dir",
+        "/projectnb/tianlabdl/rjbona/trained_models/",
+        "--batch_size",
+        "20",
+        "--num_resblocks",
+        "18",
+        "--view_ind",
+        "15",
+        "--point_loss_weight",
+        "1",
+        "--qlo_weight",
+        "1",
+        "--qhi_weight",
+        "1",
+        "--learning_rate",
+        "0.001",
+        "--lr_scheduler",
+        "cosine_annealing",
+        "--last_layer",
+        "quantile_heads",
+        "--cosine_annealing_T_max",
+        "30",
+        "--num_head_layers",
+        "1",
+        "--weight_decay",
+        "0",
+        "--optimizer",
+        "adam",
+        "--q_lo",
+        "0.5",
+        "--q_hi",
+        "0.95",
+        "--output_activation",
+        "sigmoid",
+        "--backbone",
+        "resnet",
+        "--patch_size",
+        "128",
+        "--dataset_pq",
+        "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"
+    ],
+    "state": "running",
+    "program": "/projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py",
+    "codePathLocal": "sbrnet_core/sbrnet/main.py",
+    "codePath": "sbrnet_core/sbrnet/main.py",
+    "git": {
+        "remote": "git@github.com:bu-cisl/sbrnet.git",
+        "commit": "a3b38aeb81ecbc49a69f80ec3bcd809eebee563d"
+    },
+    "email": "rjbona@bu.edu",
+    "root": "/projectnb/tianlabdl/rjbona/sbrnet",
+    "host": "scc-j02",
+    "username": "rjbona",
+    "executable": "/projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/python",
+    "cpu_count": 32,
+    "cpu_count_logical": 32,
+    "cpu_freq": {
+        "current": 4055.7435625,
+        "min": 800.0,
+        "max": 4100.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 3660.532,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 3656.286,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 3877.468,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 3789.508,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        },
+        {
+            "current": 4100.0,
+            "min": 800.0,
+            "max": 4100.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 19.518142700195312,
+            "used": 13.305763244628906
+        }
+    },
+    "gpu": "NVIDIA L40S",
+    "gpu_count": 4,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA L40S",
+            "memory_total": 48305799168
+        },
+        {
+            "name": "NVIDIA L40S",
+            "memory_total": 48305799168
+        },
+        {
+            "name": "NVIDIA L40S",
+            "memory_total": 48305799168
+        },
+        {
+            "name": "NVIDIA L40S",
+            "memory_total": 48305799168
+        }
+    ],
+    "memory": {
+        "total": 250.89939498901367
+    }
+}

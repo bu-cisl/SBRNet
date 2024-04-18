@@ -48,6 +48,7 @@ class Trainer:
         config: dict,
     ):
         self.config = config
+        wandb.init(project="rjbona_sbrnet", config=self.config)
         self.model = model
         self.noise_model = PoissonGaussianNoiseModel(config)
         self.learning_rate = config["learning_rate"]
@@ -66,11 +67,9 @@ class Trainer:
         self.lr_scheduler_name = config.get("lr_scheduler", "cosine_annealing")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        if not os.path.exists(self.model_dir):
-            os.makedirs(self.model_dir)
-
         logger.debug(f"Using device: {self.device}")
-        wandb.log({"device": self.device})
+        device_string = f'{self.device}'
+        wandb.log({"device": device_string})
         self.scaler = (
             GradScaler() if self.use_amp else None
         )  # Initialize the scaler if using AMP
@@ -185,7 +184,6 @@ class Trainer:
         return scheduler
 
     def train(self):
-        wandb.init(project="rjbona_sbrnet", config=self.config)
         logger.info(f"View index: {self.config['view_ind']}")
         wandb.log({"view_index": self.config["view_ind"]})
         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"

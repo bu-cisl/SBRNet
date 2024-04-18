@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
 current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 # Define the log file path with the timestamp
-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
+log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
 
 # Configure logging to write log messages to the file
 logging.basicConfig(filename=log_file_path, level=logging.INFO)
@@ -208,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--view_ind",
         type=int,
-        default=1,
+        default=15,
         help="view combo index  from constants.py",
     )
 

@@ -1,0 +1,135 @@
+wandb_version: 1
+
+dataset_pq:
+  desc: null
+  value: /ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq
+model_dir:
+  desc: null
+  value: /projectnb/tianlabdl/rjbona/trained_models/
+scattering:
+  desc: null
+  value: scat
+train_split:
+  desc: null
+  value: 0.8
+batch_size:
+  desc: null
+  value: 20
+learning_rate:
+  desc: null
+  value: 0.001
+epochs:
+  desc: null
+  value: 20000
+backbone:
+  desc: null
+  value: resnet
+resnet_channels:
+  desc: null
+  value: 48
+resnext_cardinality:
+  desc: null
+  value: 32
+weight_init:
+  desc: null
+  value: kaiming_normal
+random_seed:
+  desc: null
+  value: 42
+optimizer:
+  desc: null
+  value: adam
+criterion_name:
+  desc: null
+  value: bce_with_logits
+output_activation:
+  desc: null
+  value: sigmoid
+use_amp:
+  desc: null
+  value: true
+lr_scheduler:
+  desc: null
+  value: cosine_annealing
+weight_decay:
+  desc: null
+  value: 0.0
+cosine_annealing_T_max:
+  desc: null
+  value: 30
+q_lo:
+  desc: null
+  value: 0.5
+q_hi:
+  desc: null
+  value: 0.95
+qlo_weight:
+  desc: null
+  value: 1.0
+qhi_weight:
+  desc: null
+  value: 1.0
+point_loss_weight:
+  desc: null
+  value: 1.0
+num_gt_layers:
+  desc: null
+  value: 24
+num_lf_views:
+  desc: null
+  value: 9
+num_rfv_layers:
+  desc: null
+  value: 24
+num_resblocks:
+  desc: null
+  value: 18
+patch_size:
+  desc: null
+  value: 128
+last_layer:
+  desc: null
+  value: quantile_heads
+num_head_layers:
+  desc: null
+  value: 1
+view_ind:
+  desc: null
+  value: 15
+A_STD:
+  desc: null
+  value: 5.7092e-05
+A_MEAN:
+  desc: null
+  value: 0.000149
+B_STD:
+  desc: null
+  value: 2.7754e-06
+B_MEAN:
+  desc: null
+  value: 5.41e-06
+_wandb:
+  desc: null
+  value:
+    code_path: code/sbrnet_core/sbrnet/main.py
+    python_version: 3.10.12
+    cli_version: 0.16.5
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1713145881.0
+    t:
+      1:
+      - 1
+      - 55
+      2:
+      - 1
+      - 55
+      3:
+      - 16
+      - 23
+      4: 3.10.12
+      5: 0.16.5
+      8:
+      - 5
+      13: linux-x86_64

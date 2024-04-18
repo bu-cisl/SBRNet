@@ -34,7 +34,7 @@ class CustomDataset(Dataset):
         """
 
         stack = (
-            imread(self.df[f"stack_{self.scattering}_path"].iloc[0]).astype(
+            imread(self.df[f"stack_{self.scattering}_path"].iloc[index]).astype(
                 np.float32
             )
             / 0xFFFF
@@ -42,14 +42,14 @@ class CustomDataset(Dataset):
         stack = torch.from_numpy(stack)
 
         rfv = (
-            imread(self.df[f"rfv_{self.scattering}_path"].iloc[0]).astype(
+            imread(self.df[f"rfv_{self.scattering}_path"].iloc[index]).astype(
                 np.float32
             )
             / 0xFFFF
         )
         rfv = torch.from_numpy(rfv)
 
-        gt = imread(self.df["gt_path"].iloc[0]).astype(np.float32) / 0xFFFF
+        gt = imread(self.df["gt_path"].iloc[index]).astype(np.float32) / 0xFFFF
         gt = torch.from_numpy(gt)
 
         return stack, rfv, gt
@@ -69,7 +69,7 @@ class ZarrData:
     # NOTE: ensure cache is larger than number of items
     @cache
     def __getitem__(self, index: int):
-        path = self.df[self.datatype + self.pattern].iloc[0]
+        path = self.df[self.datatype + self.pattern].iloc[index]
         with TiffFile(path) as img:
             return zarr.open(img.aszarr())
 
