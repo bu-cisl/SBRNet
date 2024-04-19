@@ -1,10 +1,54 @@
-name: initial_sbrnet_test_sweep
-method: random
+name: "initial_sbrnet_test_sweep"
+method: "grid"
 
 parameters:
   learning_rate:
     values: [0.00001, 0.0001, 0.001]
   lr_scheduler:
-    values: [cosine_annealing, cosine_annealing_with_warm_restarts, step_lr]
+    values: ["cosine_annealing", "cosine_annealing_with_warm_restarts", "step_lr"]
   num_resblocks:
     values: [14, 22, 24, 32]
+  model_dir:
+    values: "/projectnb/tianlabdl/rjbona/trained_models/"
+  batch_size:
+    values: 20
+  num_resblocks:
+    values: 18
+  view_ind:
+    values: 15
+  point_loss_weight:
+    values: 1
+  model_dir:
+    values: ["/projectnb/tianlabdl/rjbona/trained_models/"]
+  batch_size:
+    values: [20]
+  num_resblocks:
+    values: [18]
+  view_ind:
+    values: [15]
+  point_loss_weight:
+    values: [1]
+  qlo_weight:
+    values: [1]
+  qhi_weight:
+    values: [1]
+  cosine_annealing_T_max:
+    values: [30]
+  num_head_layers:
+    values: [1]
+  weight_decay:
+    values: [0]
+  optimizer:
+    values: ["adam"]
+  q_lo:
+    values: [0.5]
+  q_hi:
+    values: [0.95]
+  output_activation:
+    values: ["sigmoid"]
+  backbone:
+    values: ["resnet"]
+  patch_size:
+    values: [128]
+  dataset_pq:
+    values: ["/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"]

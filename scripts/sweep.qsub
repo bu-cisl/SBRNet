@@ -35,27 +35,4 @@ echo "=========================================================="
 module load miniconda
 #conda activate /projectnb/tianlabdl/rjbona/sbrnet/.direnv
 source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
-wandb agent --count 1 cisl-bu/sbrnet/cr74ubny \
-  --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
-  --batch_size 20\
-  --num_resblocks 18\
-  --view_ind 15\
-  --point_loss_weight 1\
-  --qlo_weight 1\
-  --qhi_weight 1\
-  --learning_rate 0.001\
-  --lr_scheduler "cosine_annealing"\
-  --last_layer "quantile_heads" \
-  --cosine_annealing_T_max 30\
-  --num_head_layers 1\
-  --weight_decay 0\
-  --optimizer "adam"\
-  --q_lo 0.5\
-  --q_hi 0.95\
-  --output_activation "sigmoid" \
-  --backbone "resnet" \
-  --patch_size 128 \
-  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq" \
-  # --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/metadata.pq" \
-  # 
-  # --criterion_name "mae"
+wandb agent --count 1 cisl-bu/sbrnet/i6sjoft6

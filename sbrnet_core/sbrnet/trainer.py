@@ -68,8 +68,6 @@ class Trainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         logger.debug(f"Using device: {self.device}")
-        device_string = f'{self.device}'
-        wandb.log({"device": device_string})
         self.scaler = (
             GradScaler() if self.use_amp else None
         )  # Initialize the scaler if using AMP
@@ -91,7 +89,6 @@ class Trainer:
                 self.criterion = nn.BCEWithLogitsLoss()
         self.train_data_loader, self.val_data_loader = self._get_dataloaders()
         logger.info(f"Loss criterion: {self.criterion}")
-        wandb.log({"loss_criterion": self.criterion})
 
     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
         def split_dataset(dataset, split_ratio):
@@ -185,7 +182,6 @@ class Trainer:
 
     def train(self):
         logger.info(f"View index: {self.config['view_ind']}")
-        wandb.log({"view_index": self.config["view_ind"]})
         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
         model_save_path = os.path.join(self.model_dir, model_name)
 
@@ -201,7 +197,6 @@ class Trainer:
             model_name = f"sbrnet_view_{self.config['view_ind']}_v{version}"
             model_save_path = os.path.join(self.model_dir, model_name + ".pt")
         logger.info(f"Model save path: {model_save_path}")
-        wandb.log({"model_save_path": model_save_path})
         torch.save(self.config, model_save_path)
         self.model.to(self.device)
         self.noise_model.to(self.device)
@@ -213,7 +208,6 @@ class Trainer:
 
         if self.use_amp:
             logger.info("Using mixed-precision training with AMP.")
-            wandb.log({"AMP": True})
 
         for epoch in range(self.epochs):
             self.model.train()
@@ -285,7 +279,6 @@ class Trainer:
                 }
             )
             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
-            wandb.log({"time_elapsed": time.time() - start_time})
             val_loss, val_qlo_loss, val_qhi_loss = self.validate()
 
             self.validation_losses.append(val_loss)
@@ -304,7 +297,6 @@ class Trainer:
                 }
             )
             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
-            wandb.log({"time_elapsed": time.time() - start_time})
             if self.lr_scheduler_name == "plateau":
                 scheduler.step(
                     val_loss
@@ -331,7 +323,6 @@ class Trainer:
 
                 torch.save(save_state, model_save_path)
                 logger.info("Model saved at epoch {}".format(epoch + 1))
-                wandb.log({"model_epoch_saved": epoch + 1})
                 # rough draft for saving a visualization of the model prediction. could be better.
                 cal_data = cal_data = CustomDataset(self.config)
                 stack, rfv, gt = cal_data[0]
