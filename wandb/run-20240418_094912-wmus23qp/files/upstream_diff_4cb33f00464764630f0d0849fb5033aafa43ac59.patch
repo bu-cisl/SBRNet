@@ -1,0 +1,2826 @@
+diff --git a/configs_deprecated/sweep_config.yaml b/configs_deprecated/sweep_config.yaml
+new file mode 100644
+index 0000000..485eb2e
+--- /dev/null
++++ b/configs_deprecated/sweep_config.yaml
+@@ -0,0 +1,10 @@
++name: initial_sbrnet_test_sweep
++method: grid
++
++parameters:
++  learning_rate:
++    values: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1]
++  lr_scheduler:
++    values: [cosine_annealing, cosine_annealing_with_warm_restarts, step_lr, plateau]
++  num_resblocks:
++    values: [14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36]
+\ No newline at end of file
+diff --git a/sbrnet_core/sbrnet/losses/quantile_loss.py b/sbrnet_core/sbrnet/losses/quantile_loss.py
+index b7d031e..b602a7a 100644
+--- a/sbrnet_core/sbrnet/losses/quantile_loss.py
++++ b/sbrnet_core/sbrnet/losses/quantile_loss.py
+@@ -58,7 +58,7 @@ class QuantileLoss(nn.Module):
+                 f"Unknown loss criterion: {params['criterion_name']}. Using BCEWithLogitsLoss."
+             )
+ 
+-        self.slice_q_lo = slice(0, params["num_gt_layers"])
++        self.slice_q_lo = slice(0, params["num_gt_layers"]) #add bce weight here
+         self.slice_q_hi = slice(params["num_gt_layers"], params["num_gt_layers"] * 2)
+         self.slice_point = slice(params["num_gt_layers"] * 2, None)
+ 
+@@ -79,6 +79,7 @@ class QuantileLoss(nn.Module):
+         qlo_loss = self.qlo_weight * self.q_lo_loss(
+             self.output_activation(pred[:, self.slice_q_lo, :, :]), target
+         )
++        #add another loss function to help, bce
+         point_pred_loss = self.point_weight * self.point_loss(
+             pred[:, self.slice_point, :, :], target
+         )
+diff --git a/sbrnet_core/sbrnet/main.py b/sbrnet_core/sbrnet/main.py
+index 010ad1d..82129dd 100644
+--- a/sbrnet_core/sbrnet/main.py
++++ b/sbrnet_core/sbrnet/main.py
+@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
+ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+ 
+ # Define the log file path with the timestamp
+-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
+ 
+ # Configure logging to write log messages to the file
+ logging.basicConfig(filename=log_file_path, level=logging.INFO)
+@@ -208,7 +208,7 @@ if __name__ == "__main__":
+     parser.add_argument(
+         "--view_ind",
+         type=int,
+-        default=1,
++        default=15,
+         help="view combo index  from constants.py",
+     )
+ 
+diff --git a/sbrnet_core/sbrnet/trainer.py b/sbrnet_core/sbrnet/trainer.py
+index a30b66c..ce9c830 100644
+--- a/sbrnet_core/sbrnet/trainer.py
++++ b/sbrnet_core/sbrnet/trainer.py
+@@ -22,6 +22,7 @@ from sbrnet_core.sbrnet.calibration.rcps import get_preds
+ 
+ from matplotlib.pyplot import subplots
+ import matplotlib.pyplot as plt
++import wandb
+ 
+ 
+ now = datetime.datetime.now()
+@@ -47,6 +48,7 @@ class Trainer:
+         config: dict,
+     ):
+         self.config = config
++        wandb.init(project="rjbona_sbrnet", config=self.config)
+         self.model = model
+         self.noise_model = PoissonGaussianNoiseModel(config)
+         self.learning_rate = config["learning_rate"]
+@@ -65,10 +67,9 @@ class Trainer:
+         self.lr_scheduler_name = config.get("lr_scheduler", "cosine_annealing")
+         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+ 
+-        if not os.path.exists(self.model_dir):
+-            os.makedirs(self.model_dir)
+-
+         logger.debug(f"Using device: {self.device}")
++        device_string = f'{self.device}'
++        wandb.log({"device": device_string})
+         self.scaler = (
+             GradScaler() if self.use_amp else None
+         )  # Initialize the scaler if using AMP
+@@ -90,6 +91,7 @@ class Trainer:
+                 self.criterion = nn.BCEWithLogitsLoss()
+         self.train_data_loader, self.val_data_loader = self._get_dataloaders()
+         logger.info(f"Loss criterion: {self.criterion}")
++        wandb.log({"loss_criterion": self.criterion})
+ 
+     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
+         def split_dataset(dataset, split_ratio):
+@@ -183,6 +185,7 @@ class Trainer:
+ 
+     def train(self):
+         logger.info(f"View index: {self.config['view_ind']}")
++        wandb.log({"view_index": self.config["view_ind"]})
+         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
+         model_save_path = os.path.join(self.model_dir, model_name)
+ 
+@@ -198,6 +201,7 @@ class Trainer:
+             model_name = f"sbrnet_view_{self.config['view_ind']}_v{version}"
+             model_save_path = os.path.join(self.model_dir, model_name + ".pt")
+         logger.info(f"Model save path: {model_save_path}")
++        wandb.log({"model_save_path": model_save_path})
+         torch.save(self.config, model_save_path)
+         self.model.to(self.device)
+         self.noise_model.to(self.device)
+@@ -209,6 +213,7 @@ class Trainer:
+ 
+         if self.use_amp:
+             logger.info("Using mixed-precision training with AMP.")
++            wandb.log({"AMP": True})
+ 
+         for epoch in range(self.epochs):
+             self.model.train()
+@@ -271,8 +276,16 @@ class Trainer:
+             logger.info(
+                 f"Epoch [{epoch + 1}/{self.epochs}], Train Loss: {avg_train_loss}"
+             )
++            wandb.log(
++                {
++                    "epoch": epoch + 1,
++                    "train_loss": avg_train_loss,
++                    "qlo_train_loss": avg_qlo_loss,
++                    "qhi_train_loss": avg_qhi_loss,
++                }
++            )
+             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
+-
++            wandb.log({"time_elapsed": time.time() - start_time})
+             val_loss, val_qlo_loss, val_qhi_loss = self.validate()
+ 
+             self.validation_losses.append(val_loss)
+@@ -282,8 +295,16 @@ class Trainer:
+             logger.info(
+                 f"Epoch [{epoch + 1}/{self.epochs}], Validation Loss: {val_loss}"
+             )
++            wandb.log(
++                {
++                    "epoch": epoch + 1,
++                    "val_loss": val_loss,
++                    "qlo_val_loss": val_qlo_loss,
++                    "qhi_val_loss": val_qhi_loss,
++                }
++            )
+             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
+-
++            wandb.log({"time_elapsed": time.time() - start_time})
+             if self.lr_scheduler_name == "plateau":
+                 scheduler.step(
+                     val_loss
+@@ -310,7 +331,7 @@ class Trainer:
+ 
+                 torch.save(save_state, model_save_path)
+                 logger.info("Model saved at epoch {}".format(epoch + 1))
+-
++                wandb.log({"model_epoch_saved": epoch + 1})
+                 # rough draft for saving a visualization of the model prediction. could be better.
+                 cal_data = cal_data = CustomDataset(self.config)
+                 stack, rfv, gt = cal_data[0]
+@@ -346,8 +367,9 @@ class Trainer:
+                 fig.suptitle(f"epoch {epoch}")
+                 fig.colorbar(im3, ax=axs[1])
+                 fig_save_fol = (
+-                    "/projectnb/tianlabdl/jalido/sbrnet_proj/training_visualization/"
++                    "/projectnb/tianlabdl/rjbona/sbrnet/training_visualization/"
+                 )
++                wandb.log({"Visualization": fig})
+                 fig_save_path = os.path.join(
+                     fig_save_fol, f"{model_name}.png"
+                 )
+diff --git a/scripts/array_train.qsub b/scripts/array_train.qsub
+index b1121d1..7f5c22e 100644
+--- a/scripts/array_train.qsub
++++ b/scripts/array_train.qsub
+@@ -6,10 +6,10 @@
+ # Specify hard time limit for the job. 
+ #   The job will be aborted if it runs longer than this time.
+ #   The default time is 12 hours
+-#$ -l h_rt=48:00:00
++#$ -l h_rt=12:00:00
+ 
+ # folder where the output of the qsub job is saved
+-#$ -o /projectnb/tianlabdl/jalido/.log/.qlog
++#$ -o /projectnb/tianlabdl/rjbona/.log/.qlog
+ 
+ # Combine output and error files into a single file
+ #$ -j y
+@@ -33,28 +33,29 @@ echo "=========================================================="
+ # module load python3/3.8.10
+ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
+ module load miniconda
+-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
+-  --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
+-  --batch_size 20 \
+-  --num_resblocks 18 \
+-  --view_ind $SGE_TASK_ID \
+-  --point_loss_weight 100000 \
+-  --qlo_weight 1 \
+-  --qhi_weight 1 \
+-  --learning_rate 0.00001 \
+-  --lr_scheduler "cosine_annealing" \
++#conda activate /projectnb/tianlabdl/rjbona/sbrnet/.direnv
++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py \
++  --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
++  --batch_size 20\
++  --num_resblocks 18\
++  --view_ind 15\
++  --point_loss_weight 1\
++  --qlo_weight 1\
++  --qhi_weight 1\
++  --learning_rate 0.001\
++  --lr_scheduler "cosine_annealing"\
+   --last_layer "quantile_heads" \
+-  --cosine_annealing_T_max 30 \
+-  --num_head_layers 2 \
+-  --weight_decay 0 \
+-  --optimizer "adam" \
+-  --q_lo 0.05 \
+-  --q_hi 0.95 \
++  --cosine_annealing_T_max 30\
++  --num_head_layers 1\
++  --weight_decay 0\
++  --optimizer "adam"\
++  --q_lo 0.5\
++  --q_hi 0.95\
+   --output_activation "sigmoid" \
+   --backbone "resnet" \
+   --patch_size 128 \
+-  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/$SGE_TASK_ID/metadata.pq" \
++  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq" \
+   # --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/metadata.pq" \
+   # 
+   # --criterion_name "mae"
+\ No newline at end of file
+diff --git a/scripts/calibrate.qsub b/scripts/calibrate.qsub
+index d6ec4b6..197b7d4 100644
+--- a/scripts/calibrate.qsub
++++ b/scripts/calibrate.qsub
+@@ -33,5 +33,6 @@ echo "=========================================================="
+ # module load python3/3.8.10
+ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
+ module load miniconda
+-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/calibration/firstdraft.py
+\ No newline at end of file
++#conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/calibration/firstdraft.py
+\ No newline at end of file
+diff --git a/scripts/gen_syn_data.qsub b/scripts/gen_syn_data.qsub
+index f20aac6..526c642 100644
+--- a/scripts/gen_syn_data.qsub
++++ b/scripts/gen_syn_data.qsub
+@@ -26,9 +26,9 @@ echo "=========================================================="
+ 
+ 
+ module load miniconda
+-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+ # speficy the directory to save data, the number of data pairs, and the sbr range
+-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/synthetic_data/main.py \
++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/synthetic_data/main.py \
+     --out_dir "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/" \
+     --gt_path "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/gtbeads/" \
+     --lower_sbr 1.05 \
+diff --git a/scripts/run_array_train.sh b/scripts/run_array_train.sh
+index cdacd72..b16d4e7 100755
+--- a/scripts/run_array_train.sh
++++ b/scripts/run_array_train.sh
+@@ -1,4 +1,7 @@
+ timestamp=$(date +"%Y%m%d%H%M%S")
+ jobname="sbrnet_array_training_${timestamp}"
+ 
+-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/array_train.qsub
++sweep_config="/projectnb/tianlabdl/rjbona/sbrnet/configs_deprecated/sweep_config.yaml"
++wandb sweep "$sweep_config"
++
++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/array_train.qsub
+diff --git a/scripts/run_gen_syn_data.sh b/scripts/run_gen_syn_data.sh
+index 11869e8..f4c0695 100755
+--- a/scripts/run_gen_syn_data.sh
++++ b/scripts/run_gen_syn_data.sh
+@@ -2,5 +2,5 @@ timestamp=$(date +"%Y%m%d%H%M%S")
+ jobname="sbrnet_synthetic_data_gen_${timestamp}"
+ 
+ 
+-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/gen_syn_data.qsub
++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/scripts/gen_syn_data.qsub
+ 
+diff --git a/scripts/run_train.sh b/scripts/run_train.sh
+index 64e0575..4f2f2a3 100755
+--- a/scripts/run_train.sh
++++ b/scripts/run_train.sh
+@@ -1,4 +1,4 @@
+ timestamp=$(date +"%Y%m%d%H%M%S")
+ jobname="sbrnet_training_${timestamp}"
+ 
+-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/train.qsub
++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/train.qsub
+diff --git a/scripts/train.qsub b/scripts/train.qsub
+index 0352431..975e302 100644
+--- a/scripts/train.qsub
++++ b/scripts/train.qsub
+@@ -32,7 +32,7 @@ echo "=========================================================="
+ # module load python3/3.8.10
+ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
+ module load miniconda
+-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+ python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
+   --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/3/metadata.pq" \
+   --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
+diff --git a/wandb/latest-run b/wandb/latest-run
+new file mode 120000
+index 0000000..27e52d9
+--- /dev/null
++++ b/wandb/latest-run
+@@ -0,0 +1 @@
++run-20240418_094912-wmus23qp
+\ No newline at end of file
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/code/sbrnet_core/sbrnet/main.py b/wandb/run-20240414_084810-8yczm12q/files/code/sbrnet_core/sbrnet/main.py
+new file mode 100644
+index 0000000..82129dd
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/code/sbrnet_core/sbrnet/main.py
+@@ -0,0 +1,244 @@
++import logging
++import argparse
++from datetime import datetime
++from torch import compile
++
++from sbrnet_core.sbrnet.models.model import SBRNet
++
++# from sbrnet_core.config_loader import load_config # Not needed anymore
++from sbrnet_core.sbrnet.trainer import Trainer
++
++# Get the current timestamp as a string
++current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++
++# Define the log file path with the timestamp
++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++
++# Configure logging to write log messages to the file
++logging.basicConfig(filename=log_file_path, level=logging.INFO)
++
++logger = logging.getLogger(__name__)
++
++
++def main(args):
++    # Construct the configuration dictionary from the argparse namespace
++    config = vars(args)
++
++    logger.info("Configuration:")
++    for key, value in config.items():
++        logger.info(f"{key}: {value}")
++
++    model = compile(SBRNet(config))
++
++    trainer = Trainer(model, config)
++
++    logger.info("Starting training...")
++
++    trainer.train()
++
++    logger.info("Training complete.")
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(
++        description="Train SBRNet with command-line parameters."
++    )
++
++    # paths
++    parser.add_argument(
++        "--dataset_pq",
++        type=str,
++        required=True,
++        help="Path to the Parquet dataset file.",
++    )
++    parser.add_argument(
++        "--model_dir", type=str, required=True, help="Directory to save trained models."
++    )
++    parser.add_argument(
++        "--scattering",
++        type=str,
++        default="scat",
++        choices=["scat", "free"],
++        help="whether to use scattering or free space data.",
++    )
++
++    # training stuff
++    parser.add_argument(
++        "--train_split",
++        type=float,
++        default=0.8,
++        help="The ratio of training set split.",
++    )
++    parser.add_argument(
++        "--batch_size", type=int, default=16, help="Batch size for training."
++    )
++    parser.add_argument(
++        "--learning_rate",
++        type=float,
++        default=0.001,
++        help="Learning rate for the optimizer.",
++    )
++    parser.add_argument(
++        "--epochs", type=int, default=20000, help="Number of epochs for training."
++    )
++    parser.add_argument(
++        "--backbone", type=str, default="resnet", help="The backbone network type."
++    )
++    parser.add_argument(
++        "--resnet_channels",
++        type=int,
++        default=48,
++        help="Number of channels in resnet backbone.",
++    )
++    parser.add_argument(
++        "--resnext_cardinality",
++        type=int,
++        default=32,
++        help="cardinality in resnext backbone.",
++    )
++    parser.add_argument(
++        "--weight_init",
++        type=str,
++        default="kaiming_normal",
++        help="Weight initialization method.",
++    )
++    parser.add_argument(
++        "--random_seed", type=int, default=42, help="Seed for random number generators."
++    )
++    parser.add_argument("--optimizer", type=str, default="adam", help="Optimizer type.")
++    parser.add_argument(
++        "--criterion_name",
++        type=str,
++        default="bce_with_logits",
++        help="Criterion name for the loss function.",
++    )
++    parser.add_argument(
++        "--output_activation",
++        type=str,
++        default="sigmoid",
++        choices=["sigmoid", "relu", "none"],
++        help="output activation for quantile heads.",
++    )
++    parser.add_argument(
++        "--use_amp",
++        type=bool,
++        default=True,
++        help="Whether to use automatic mixed precision or not.",
++    )
++    parser.add_argument(
++        "--lr_scheduler",
++        type=str,
++        default="cosine_annealing_with_warm_restarts",
++        help="Learning rate scheduler type.",
++    )
++    parser.add_argument(
++        "--weight_decay",
++        type=float,
++        default=0.0001,
++        help="network weight decay regularization parameter.",
++    )
++    parser.add_argument(
++        "--cosine_annealing_T_max",
++        type=int,
++        default=100,
++        help="Maximum number of iterations for cosine annealing scheduler.",
++    )
++    parser.add_argument(
++        "--q_lo",
++        type=float,
++        default=0.05,
++        help="lower quantile for quantile regression loss.",
++    )
++    parser.add_argument(
++        "--q_hi",
++        type=float,
++        default=0.95,
++        help="upper quantile for quantile regression loss.",
++    )
++    parser.add_argument(
++        "--qlo_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++    parser.add_argument(
++        "--qhi_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++    parser.add_argument(
++        "--point_loss_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++
++    # model stuff
++    parser.add_argument(
++        "--num_gt_layers", type=int, default=24, help="Number of ground truth layers."
++    )
++    parser.add_argument(
++        "--num_lf_views",
++        type=int,
++        default=9,
++        help="Number of light field views. Not being used in code though.",
++    )
++    parser.add_argument(
++        "--num_rfv_layers", type=int, default=24, help="Number of RFV layers."
++    )
++    parser.add_argument(
++        "--num_resblocks", type=int, default=15, help="Number of residual blocks."
++    )
++    parser.add_argument(
++        "--patch_size", type=int, default=224, help="Size of the patch."
++    )
++    parser.add_argument(
++        "--last_layer",
++        type=str,
++        default="quantile_heads",
++        help="whether to do UQ with conformal pred or not.",
++    )
++    parser.add_argument(
++        "--num_head_layers",
++        type=int,
++        default=3,
++        help="number of conv layers for the head.",
++    )
++    parser.add_argument(
++        "--view_ind",
++        type=int,
++        default=15,
++        help="view combo index  from constants.py",
++    )
++
++    # calibrated parameters for poisson-gaussian noise model
++    parser.add_argument(
++        "--A_STD",
++        type=float,
++        default=5.7092e-5,
++        help="Standard deviation of A for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--A_MEAN",
++        type=float,
++        default=1.49e-4,
++        help="Mean of A for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--B_STD",
++        type=float,
++        default=2.7754e-6,
++        help="Standard deviation of B for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--B_MEAN",
++        type=float,
++        default=5.41e-6,
++        help="Mean of B for poisson-gaussian noise model.",
++    )
++
++    # Parse the arguments
++    args = parser.parse_args()
++
++    main(args)
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/config.yaml b/wandb/run-20240414_084810-8yczm12q/files/config.yaml
+new file mode 100644
+index 0000000..3cb64bb
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/config.yaml
+@@ -0,0 +1,135 @@
++wandb_version: 1
++
++dataset_pq:
++  desc: null
++  value: /ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq
++model_dir:
++  desc: null
++  value: /projectnb/tianlabdl/rjbona/trained_models/
++scattering:
++  desc: null
++  value: scat
++train_split:
++  desc: null
++  value: 0.8
++batch_size:
++  desc: null
++  value: 20
++learning_rate:
++  desc: null
++  value: 0.001
++epochs:
++  desc: null
++  value: 20000
++backbone:
++  desc: null
++  value: resnet
++resnet_channels:
++  desc: null
++  value: 48
++resnext_cardinality:
++  desc: null
++  value: 32
++weight_init:
++  desc: null
++  value: kaiming_normal
++random_seed:
++  desc: null
++  value: 42
++optimizer:
++  desc: null
++  value: adam
++criterion_name:
++  desc: null
++  value: bce_with_logits
++output_activation:
++  desc: null
++  value: sigmoid
++use_amp:
++  desc: null
++  value: true
++lr_scheduler:
++  desc: null
++  value: cosine_annealing
++weight_decay:
++  desc: null
++  value: 0.0
++cosine_annealing_T_max:
++  desc: null
++  value: 30
++q_lo:
++  desc: null
++  value: 0.5
++q_hi:
++  desc: null
++  value: 0.95
++qlo_weight:
++  desc: null
++  value: 1.0
++qhi_weight:
++  desc: null
++  value: 1.0
++point_loss_weight:
++  desc: null
++  value: 1.0
++num_gt_layers:
++  desc: null
++  value: 24
++num_lf_views:
++  desc: null
++  value: 9
++num_rfv_layers:
++  desc: null
++  value: 24
++num_resblocks:
++  desc: null
++  value: 18
++patch_size:
++  desc: null
++  value: 128
++last_layer:
++  desc: null
++  value: quantile_heads
++num_head_layers:
++  desc: null
++  value: 1
++view_ind:
++  desc: null
++  value: 15
++A_STD:
++  desc: null
++  value: 5.7092e-05
++A_MEAN:
++  desc: null
++  value: 0.000149
++B_STD:
++  desc: null
++  value: 2.7754e-06
++B_MEAN:
++  desc: null
++  value: 5.41e-06
++_wandb:
++  desc: null
++  value:
++    code_path: code/sbrnet_core/sbrnet/main.py
++    python_version: 3.10.12
++    cli_version: 0.16.5
++    framework: torch
++    is_jupyter_run: false
++    is_kaggle_kernel: false
++    start_time: 1713098890.0
++    t:
++      1:
++      - 1
++      - 55
++      2:
++      - 1
++      - 55
++      3:
++      - 16
++      - 23
++      4: 3.10.12
++      5: 0.16.5
++      8:
++      - 5
++      13: linux-x86_64
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/diff.patch b/wandb/run-20240414_084810-8yczm12q/files/diff.patch
+new file mode 100644
+index 0000000..aafb542
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/diff.patch
+@@ -0,0 +1,103 @@
++diff --git a/sbrnet_core/sbrnet/main.py b/sbrnet_core/sbrnet/main.py
++index 010ad1d..82129dd 100644
++--- a/sbrnet_core/sbrnet/main.py
+++++ b/sbrnet_core/sbrnet/main.py
++@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
++ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++ 
++ # Define the log file path with the timestamp
++-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
+++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++ 
++ # Configure logging to write log messages to the file
++ logging.basicConfig(filename=log_file_path, level=logging.INFO)
++@@ -208,7 +208,7 @@ if __name__ == "__main__":
++     parser.add_argument(
++         "--view_ind",
++         type=int,
++-        default=1,
+++        default=15,
++         help="view combo index  from constants.py",
++     )
++ 
++diff --git a/sbrnet_core/sbrnet/trainer.py b/sbrnet_core/sbrnet/trainer.py
++index 05f085b..c8bbb66 100644
++--- a/sbrnet_core/sbrnet/trainer.py
+++++ b/sbrnet_core/sbrnet/trainer.py
++@@ -48,6 +48,7 @@ class Trainer:
++         config: dict,
++     ):
++         self.config = config
+++        wandb.init(project="rjbona_sbrnet", config=self.config)
++         self.model = model
++         self.noise_model = PoissonGaussianNoiseModel(config)
++         self.learning_rate = config["learning_rate"]
++@@ -185,7 +186,6 @@ class Trainer:
++         return scheduler
++ 
++     def train(self):
++-        wandb.init(project="rjbona_sbrnet", config=self.config)
++         logger.info(f"View index: {self.config['view_ind']}")
++         wandb.log({"view_index": self.config["view_ind"]})
++         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
++diff --git a/scripts/array_train.qsub b/scripts/array_train.qsub
++index 9e83f16..7f5c22e 100644
++--- a/scripts/array_train.qsub
+++++ b/scripts/array_train.qsub
++@@ -30,8 +30,6 @@ echo "=========================================================="
++ #$-l gpu_c=7.0
++ #$ -l gpu_memory=16G
++ 
++-#numresblocks, lr, lr scheduler
++-#sge cloud computing, wandb
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++@@ -39,21 +37,21 @@ module load miniconda
++ source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py \
++   --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
++-  --batch_size 20 \
++-  --num_resblocks 18 \ 
++-  --view_ind 15 \
++-  --point_loss_weight 1 \
++-  --qlo_weight 1 \
++-  --qhi_weight 1 \
++-  --learning_rate 0.001 \ 
++-  --lr_scheduler "cosine_annealing" \ 
+++  --batch_size 20\
+++  --num_resblocks 18\
+++  --view_ind 15\
+++  --point_loss_weight 1\
+++  --qlo_weight 1\
+++  --qhi_weight 1\
+++  --learning_rate 0.001\
+++  --lr_scheduler "cosine_annealing"\
++   --last_layer "quantile_heads" \
++-  --cosine_annealing_T_max 30 \
++-  --num_head_layers 1 \
++-  --weight_decay 0 \
++-  --optimizer "adam" \
++-  --q_lo 0.5 \
++-  --q_hi 0.95 \
+++  --cosine_annealing_T_max 30\
+++  --num_head_layers 1\
+++  --weight_decay 0\
+++  --optimizer "adam"\
+++  --q_lo 0.5\
+++  --q_hi 0.95\
++   --output_activation "sigmoid" \
++   --backbone "resnet" \
++   --patch_size 128 \
++diff --git a/scripts/run_array_train.sh b/scripts/run_array_train.sh
++index fade18d..b35fb33 100755
++--- a/scripts/run_array_train.sh
+++++ b/scripts/run_array_train.sh
++@@ -1,4 +1,7 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_array_training_${timestamp}"
++ 
+++#sweep_config = "/projectnb/tianlabdl/rjbona/sbrnet/configs_deprecated/sweep_config.yaml"
+++#wandb sweep $sweep_config
+++
++ qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/array_train.qsub
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/requirements.txt b/wandb/run-20240414_084810-8yczm12q/files/requirements.txt
+new file mode 100644
+index 0000000..5e09073
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/requirements.txt
+@@ -0,0 +1,103 @@
++GitPython==3.1.42
++Jinja2==3.1.3
++MarkupSafe==2.1.5
++PyYAML==6.0.1
++Pygments==2.17.2
++aiosignal==1.3.1
++appdirs==1.4.4
++asciitree==0.3.3
++asttokens==2.4.1
++attrs==23.2.0
++certifi==2024.2.2
++charset-normalizer==3.3.2
++click==8.1.7
++comm==0.2.2
++contourpy==1.2.0
++cramjam==2.8.2
++cycler==0.12.1
++debugpy==1.8.1
++decorator==5.1.1
++docker-pycreds==0.4.0
++exceptiongroup==1.2.0
++executing==2.0.1
++fasteners==0.19
++fastparquet==2024.2.0
++filelock==3.13.1
++fonttools==4.50.0
++frozenlist==1.4.1
++fsspec==2024.3.0
++gitdb==4.0.11
++idna==3.6
++imageio==2.34.0
++ipykernel==6.29.3
++ipython==8.22.2
++jedi==0.19.1
++jsonschema-specifications==2023.12.1
++jsonschema==4.21.1
++jupyter_client==8.6.1
++jupyter_core==5.7.2
++kiwisolver==1.4.5
++lazy_loader==0.3
++matplotlib-inline==0.1.6
++matplotlib==3.8.3
++mpmath==1.3.0
++msgpack==1.0.8
++nest-asyncio==1.6.0
++networkx==3.2.1
++numcodecs==0.12.1
++numpy==1.26.4
++nvidia-cublas-cu12==12.1.3.1
++nvidia-cuda-cupti-cu12==12.1.105
++nvidia-cuda-nvrtc-cu12==12.1.105
++nvidia-cuda-runtime-cu12==12.1.105
++nvidia-cudnn-cu12==8.9.2.26
++nvidia-cufft-cu12==11.0.2.54
++nvidia-curand-cu12==10.3.2.106
++nvidia-cusolver-cu12==11.4.5.107
++nvidia-cusparse-cu12==12.1.0.106
++nvidia-nccl-cu12==2.19.3
++nvidia-nvjitlink-cu12==12.4.99
++nvidia-nvtx-cu12==12.1.105
++packaging==24.0
++pandas==2.2.1
++parso==0.8.3
++pexpect==4.9.0
++pillow==10.2.0
++pip==23.1.2
++platformdirs==4.2.0
++prompt-toolkit==3.0.43
++protobuf==4.25.3
++psutil==5.9.8
++ptyprocess==0.7.0
++pure-eval==0.2.2
++pyarrow==15.0.1
++pyparsing==3.1.2
++python-dateutil==2.9.0.post0
++pytz==2024.1
++pyzmq==25.1.2
++ray==2.9.3
++referencing==0.34.0
++requests==2.31.0
++rpds-py==0.18.0
++sbrnet-core==0.1
++scikit-image==0.22.0
++scipy==1.12.0
++sentry-sdk==1.44.0
++setproctitle==1.3.3
++setuptools==67.8.0
++six==1.16.0
++smmap==5.0.1
++stack-data==0.6.3
++sympy==1.12
++tifffile==2024.2.12
++torch==2.2.1
++tornado==6.4
++traitlets==5.14.2
++triton==2.2.0
++typing_extensions==4.10.0
++tzdata==2024.1
++urllib3==2.2.1
++wandb==0.16.5
++wcwidth==0.2.13
++wheel==0.40.0
++zarr==2.17.1
+\ No newline at end of file
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch b/wandb/run-20240414_084810-8yczm12q/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch
+new file mode 100644
+index 0000000..26ef89e
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch
+@@ -0,0 +1,342 @@
++diff --git a/sbrnet_core/sbrnet/dataset.py b/sbrnet_core/sbrnet/dataset.py
++index 5b5cd3b..02b229d 100644
++--- a/sbrnet_core/sbrnet/dataset.py
+++++ b/sbrnet_core/sbrnet/dataset.py
++@@ -34,7 +34,7 @@ class CustomDataset(Dataset):
++         """
++ 
++         stack = (
++-            imread(self.df[f"stack_{self.scattering}_path"].iloc[index]).astype(
+++            imread(self.df[f"stack_{self.scattering}_path"].iloc[0]).astype(
++                 np.float32
++             )
++             / 0xFFFF
++@@ -42,14 +42,14 @@ class CustomDataset(Dataset):
++         stack = torch.from_numpy(stack)
++ 
++         rfv = (
++-            imread(self.df[f"rfv_{self.scattering}_path"].iloc[index]).astype(
+++            imread(self.df[f"rfv_{self.scattering}_path"].iloc[0]).astype(
++                 np.float32
++             )
++             / 0xFFFF
++         )
++         rfv = torch.from_numpy(rfv)
++ 
++-        gt = imread(self.df["gt_path"].iloc[index]).astype(np.float32) / 0xFFFF
+++        gt = imread(self.df["gt_path"].iloc[0]).astype(np.float32) / 0xFFFF
++         gt = torch.from_numpy(gt)
++ 
++         return stack, rfv, gt
++@@ -69,7 +69,7 @@ class ZarrData:
++     # NOTE: ensure cache is larger than number of items
++     @cache
++     def __getitem__(self, index: int):
++-        path = self.df[self.datatype + self.pattern].iloc[index]
+++        path = self.df[self.datatype + self.pattern].iloc[0]
++         with TiffFile(path) as img:
++             return zarr.open(img.aszarr())
++ 
++diff --git a/sbrnet_core/sbrnet/losses/quantile_loss.py b/sbrnet_core/sbrnet/losses/quantile_loss.py
++index b7d031e..b602a7a 100644
++--- a/sbrnet_core/sbrnet/losses/quantile_loss.py
+++++ b/sbrnet_core/sbrnet/losses/quantile_loss.py
++@@ -58,7 +58,7 @@ class QuantileLoss(nn.Module):
++                 f"Unknown loss criterion: {params['criterion_name']}. Using BCEWithLogitsLoss."
++             )
++ 
++-        self.slice_q_lo = slice(0, params["num_gt_layers"])
+++        self.slice_q_lo = slice(0, params["num_gt_layers"]) #add bce weight here
++         self.slice_q_hi = slice(params["num_gt_layers"], params["num_gt_layers"] * 2)
++         self.slice_point = slice(params["num_gt_layers"] * 2, None)
++ 
++@@ -79,6 +79,7 @@ class QuantileLoss(nn.Module):
++         qlo_loss = self.qlo_weight * self.q_lo_loss(
++             self.output_activation(pred[:, self.slice_q_lo, :, :]), target
++         )
+++        #add another loss function to help, bce
++         point_pred_loss = self.point_weight * self.point_loss(
++             pred[:, self.slice_point, :, :], target
++         )
++diff --git a/sbrnet_core/sbrnet/main.py b/sbrnet_core/sbrnet/main.py
++index 010ad1d..82129dd 100644
++--- a/sbrnet_core/sbrnet/main.py
+++++ b/sbrnet_core/sbrnet/main.py
++@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
++ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++ 
++ # Define the log file path with the timestamp
++-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
+++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++ 
++ # Configure logging to write log messages to the file
++ logging.basicConfig(filename=log_file_path, level=logging.INFO)
++@@ -208,7 +208,7 @@ if __name__ == "__main__":
++     parser.add_argument(
++         "--view_ind",
++         type=int,
++-        default=1,
+++        default=15,
++         help="view combo index  from constants.py",
++     )
++ 
++diff --git a/sbrnet_core/sbrnet/trainer.py b/sbrnet_core/sbrnet/trainer.py
++index a30b66c..c8bbb66 100644
++--- a/sbrnet_core/sbrnet/trainer.py
+++++ b/sbrnet_core/sbrnet/trainer.py
++@@ -22,6 +22,7 @@ from sbrnet_core.sbrnet.calibration.rcps import get_preds
++ 
++ from matplotlib.pyplot import subplots
++ import matplotlib.pyplot as plt
+++import wandb
++ 
++ 
++ now = datetime.datetime.now()
++@@ -47,6 +48,7 @@ class Trainer:
++         config: dict,
++     ):
++         self.config = config
+++        wandb.init(project="rjbona_sbrnet", config=self.config)
++         self.model = model
++         self.noise_model = PoissonGaussianNoiseModel(config)
++         self.learning_rate = config["learning_rate"]
++@@ -69,6 +71,7 @@ class Trainer:
++             os.makedirs(self.model_dir)
++ 
++         logger.debug(f"Using device: {self.device}")
+++        wandb.log({"device": self.device})
++         self.scaler = (
++             GradScaler() if self.use_amp else None
++         )  # Initialize the scaler if using AMP
++@@ -90,6 +93,7 @@ class Trainer:
++                 self.criterion = nn.BCEWithLogitsLoss()
++         self.train_data_loader, self.val_data_loader = self._get_dataloaders()
++         logger.info(f"Loss criterion: {self.criterion}")
+++        wandb.log({"loss_criterion": self.criterion})
++ 
++     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
++         def split_dataset(dataset, split_ratio):
++@@ -183,6 +187,7 @@ class Trainer:
++ 
++     def train(self):
++         logger.info(f"View index: {self.config['view_ind']}")
+++        wandb.log({"view_index": self.config["view_ind"]})
++         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
++         model_save_path = os.path.join(self.model_dir, model_name)
++ 
++@@ -198,6 +203,7 @@ class Trainer:
++             model_name = f"sbrnet_view_{self.config['view_ind']}_v{version}"
++             model_save_path = os.path.join(self.model_dir, model_name + ".pt")
++         logger.info(f"Model save path: {model_save_path}")
+++        wandb.log({"model_save_path": model_save_path})
++         torch.save(self.config, model_save_path)
++         self.model.to(self.device)
++         self.noise_model.to(self.device)
++@@ -209,6 +215,7 @@ class Trainer:
++ 
++         if self.use_amp:
++             logger.info("Using mixed-precision training with AMP.")
+++            wandb.log({"AMP": True})
++ 
++         for epoch in range(self.epochs):
++             self.model.train()
++@@ -271,8 +278,16 @@ class Trainer:
++             logger.info(
++                 f"Epoch [{epoch + 1}/{self.epochs}], Train Loss: {avg_train_loss}"
++             )
+++            wandb.log(
+++                {
+++                    "epoch": epoch + 1,
+++                    "train_loss": avg_train_loss,
+++                    "qlo_train_loss": avg_qlo_loss,
+++                    "qhi_train_loss": avg_qhi_loss,
+++                }
+++            )
++             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
++-
+++            wandb.log({"time_elapsed": time.time() - start_time})
++             val_loss, val_qlo_loss, val_qhi_loss = self.validate()
++ 
++             self.validation_losses.append(val_loss)
++@@ -282,8 +297,16 @@ class Trainer:
++             logger.info(
++                 f"Epoch [{epoch + 1}/{self.epochs}], Validation Loss: {val_loss}"
++             )
+++            wandb.log(
+++                {
+++                    "epoch": epoch + 1,
+++                    "val_loss": val_loss,
+++                    "qlo_val_loss": val_qlo_loss,
+++                    "qhi_val_loss": val_qhi_loss,
+++                }
+++            )
++             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
++-
+++            wandb.log({"time_elapsed": time.time() - start_time})
++             if self.lr_scheduler_name == "plateau":
++                 scheduler.step(
++                     val_loss
++@@ -310,7 +333,7 @@ class Trainer:
++ 
++                 torch.save(save_state, model_save_path)
++                 logger.info("Model saved at epoch {}".format(epoch + 1))
++-
+++                wandb.log({"model_epoch_saved": epoch + 1})
++                 # rough draft for saving a visualization of the model prediction. could be better.
++                 cal_data = cal_data = CustomDataset(self.config)
++                 stack, rfv, gt = cal_data[0]
++@@ -346,8 +369,9 @@ class Trainer:
++                 fig.suptitle(f"epoch {epoch}")
++                 fig.colorbar(im3, ax=axs[1])
++                 fig_save_fol = (
++-                    "/projectnb/tianlabdl/jalido/sbrnet_proj/training_visualization/"
+++                    "/projectnb/tianlabdl/rjbona/sbrnet/training_visualization/"
++                 )
+++                wandb.log({"Visualization": fig})
++                 fig_save_path = os.path.join(
++                     fig_save_fol, f"{model_name}.png"
++                 )
++diff --git a/scripts/array_train.qsub b/scripts/array_train.qsub
++index b1121d1..7f5c22e 100644
++--- a/scripts/array_train.qsub
+++++ b/scripts/array_train.qsub
++@@ -6,10 +6,10 @@
++ # Specify hard time limit for the job. 
++ #   The job will be aborted if it runs longer than this time.
++ #   The default time is 12 hours
++-#$ -l h_rt=48:00:00
+++#$ -l h_rt=12:00:00
++ 
++ # folder where the output of the qsub job is saved
++-#$ -o /projectnb/tianlabdl/jalido/.log/.qlog
+++#$ -o /projectnb/tianlabdl/rjbona/.log/.qlog
++ 
++ # Combine output and error files into a single file
++ #$ -j y
++@@ -33,28 +33,29 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
++-  --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
++-  --batch_size 20 \
++-  --num_resblocks 18 \
++-  --view_ind $SGE_TASK_ID \
++-  --point_loss_weight 100000 \
++-  --qlo_weight 1 \
++-  --qhi_weight 1 \
++-  --learning_rate 0.00001 \
++-  --lr_scheduler "cosine_annealing" \
+++#conda activate /projectnb/tianlabdl/rjbona/sbrnet/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py \
+++  --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
+++  --batch_size 20\
+++  --num_resblocks 18\
+++  --view_ind 15\
+++  --point_loss_weight 1\
+++  --qlo_weight 1\
+++  --qhi_weight 1\
+++  --learning_rate 0.001\
+++  --lr_scheduler "cosine_annealing"\
++   --last_layer "quantile_heads" \
++-  --cosine_annealing_T_max 30 \
++-  --num_head_layers 2 \
++-  --weight_decay 0 \
++-  --optimizer "adam" \
++-  --q_lo 0.05 \
++-  --q_hi 0.95 \
+++  --cosine_annealing_T_max 30\
+++  --num_head_layers 1\
+++  --weight_decay 0\
+++  --optimizer "adam"\
+++  --q_lo 0.5\
+++  --q_hi 0.95\
++   --output_activation "sigmoid" \
++   --backbone "resnet" \
++   --patch_size 128 \
++-  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/$SGE_TASK_ID/metadata.pq" \
+++  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq" \
++   # --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/metadata.pq" \
++   # 
++   # --criterion_name "mae"
++\ No newline at end of file
++diff --git a/scripts/calibrate.qsub b/scripts/calibrate.qsub
++index d6ec4b6..197b7d4 100644
++--- a/scripts/calibrate.qsub
+++++ b/scripts/calibrate.qsub
++@@ -33,5 +33,6 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/calibration/firstdraft.py
++\ No newline at end of file
+++#conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/calibration/firstdraft.py
++\ No newline at end of file
++diff --git a/scripts/gen_syn_data.qsub b/scripts/gen_syn_data.qsub
++index f20aac6..526c642 100644
++--- a/scripts/gen_syn_data.qsub
+++++ b/scripts/gen_syn_data.qsub
++@@ -26,9 +26,9 @@ echo "=========================================================="
++ 
++ 
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ # speficy the directory to save data, the number of data pairs, and the sbr range
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/synthetic_data/main.py \
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/synthetic_data/main.py \
++     --out_dir "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/" \
++     --gt_path "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/gtbeads/" \
++     --lower_sbr 1.05 \
++diff --git a/scripts/run_array_train.sh b/scripts/run_array_train.sh
++index cdacd72..b35fb33 100755
++--- a/scripts/run_array_train.sh
+++++ b/scripts/run_array_train.sh
++@@ -1,4 +1,7 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_array_training_${timestamp}"
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/array_train.qsub
+++#sweep_config = "/projectnb/tianlabdl/rjbona/sbrnet/configs_deprecated/sweep_config.yaml"
+++#wandb sweep $sweep_config
+++
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/array_train.qsub
++diff --git a/scripts/run_gen_syn_data.sh b/scripts/run_gen_syn_data.sh
++index 11869e8..f4c0695 100755
++--- a/scripts/run_gen_syn_data.sh
+++++ b/scripts/run_gen_syn_data.sh
++@@ -2,5 +2,5 @@ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_synthetic_data_gen_${timestamp}"
++ 
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/gen_syn_data.qsub
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/scripts/gen_syn_data.qsub
++ 
++diff --git a/scripts/run_train.sh b/scripts/run_train.sh
++index 64e0575..4f2f2a3 100755
++--- a/scripts/run_train.sh
+++++ b/scripts/run_train.sh
++@@ -1,4 +1,4 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_training_${timestamp}"
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/train.qsub
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/train.qsub
++diff --git a/scripts/train.qsub b/scripts/train.qsub
++index 0352431..975e302 100644
++--- a/scripts/train.qsub
+++++ b/scripts/train.qsub
++@@ -32,7 +32,7 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
++   --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/3/metadata.pq" \
++   --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/wandb-metadata.json b/wandb/run-20240414_084810-8yczm12q/files/wandb-metadata.json
+new file mode 100644
+index 0000000..c1d78f1
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/wandb-metadata.json
+@@ -0,0 +1,261 @@
++{
++    "os": "Linux-4.18.0-513.9.1.el8_9.x86_64-x86_64-with-glibc2.28",
++    "python": "3.10.12",
++    "heartbeatAt": "2024-04-14T12:48:10.929356",
++    "startedAt": "2024-04-14T12:48:10.567505",
++    "docker": null,
++    "cuda": null,
++    "args": [
++        "--model_dir",
++        "/projectnb/tianlabdl/rjbona/trained_models/",
++        "--batch_size",
++        "20",
++        "--num_resblocks",
++        "18",
++        "--view_ind",
++        "15",
++        "--point_loss_weight",
++        "1",
++        "--qlo_weight",
++        "1",
++        "--qhi_weight",
++        "1",
++        "--learning_rate",
++        "0.001",
++        "--lr_scheduler",
++        "cosine_annealing",
++        "--last_layer",
++        "quantile_heads",
++        "--cosine_annealing_T_max",
++        "30",
++        "--num_head_layers",
++        "1",
++        "--weight_decay",
++        "0",
++        "--optimizer",
++        "adam",
++        "--q_lo",
++        "0.5",
++        "--q_hi",
++        "0.95",
++        "--output_activation",
++        "sigmoid",
++        "--backbone",
++        "resnet",
++        "--patch_size",
++        "128",
++        "--dataset_pq",
++        "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"
++    ],
++    "state": "running",
++    "program": "/projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py",
++    "codePathLocal": "sbrnet_core/sbrnet/main.py",
++    "codePath": "sbrnet_core/sbrnet/main.py",
++    "git": {
++        "remote": "git@github.com:bu-cisl/sbrnet.git",
++        "commit": "a3b38aeb81ecbc49a69f80ec3bcd809eebee563d"
++    },
++    "email": "rjbona@bu.edu",
++    "root": "/projectnb/tianlabdl/rjbona/sbrnet",
++    "host": "scc-j02",
++    "username": "rjbona",
++    "executable": "/projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/python",
++    "cpu_count": 32,
++    "cpu_count_logical": 32,
++    "cpu_freq": {
++        "current": 4096.9618125,
++        "min": 800.0,
++        "max": 4100.0
++    },
++    "cpu_freq_per_core": [
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4002.778,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        }
++    ],
++    "disk": {
++        "/": {
++            "total": 19.518142700195312,
++            "used": 13.305763244628906
++        }
++    },
++    "gpu": "NVIDIA L40S",
++    "gpu_count": 4,
++    "gpu_devices": [
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        }
++    ],
++    "memory": {
++        "total": 250.89939498901367
++    }
++}
+diff --git a/wandb/run-20240414_084810-8yczm12q/files/wandb-summary.json b/wandb/run-20240414_084810-8yczm12q/files/wandb-summary.json
+new file mode 100644
+index 0000000..971d479
+--- /dev/null
++++ b/wandb/run-20240414_084810-8yczm12q/files/wandb-summary.json
+@@ -0,0 +1 @@
++{"_wandb": {"runtime": 1}}
+\ No newline at end of file
+diff --git a/wandb/run-20240414_084810-8yczm12q/run-8yczm12q.wandb b/wandb/run-20240414_084810-8yczm12q/run-8yczm12q.wandb
+new file mode 100644
+index 0000000..5e31289
+Binary files /dev/null and b/wandb/run-20240414_084810-8yczm12q/run-8yczm12q.wandb differ
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/code/sbrnet_core/sbrnet/main.py b/wandb/run-20240414_215121-8bhztaye/files/code/sbrnet_core/sbrnet/main.py
+new file mode 100644
+index 0000000..82129dd
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/code/sbrnet_core/sbrnet/main.py
+@@ -0,0 +1,244 @@
++import logging
++import argparse
++from datetime import datetime
++from torch import compile
++
++from sbrnet_core.sbrnet.models.model import SBRNet
++
++# from sbrnet_core.config_loader import load_config # Not needed anymore
++from sbrnet_core.sbrnet.trainer import Trainer
++
++# Get the current timestamp as a string
++current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++
++# Define the log file path with the timestamp
++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++
++# Configure logging to write log messages to the file
++logging.basicConfig(filename=log_file_path, level=logging.INFO)
++
++logger = logging.getLogger(__name__)
++
++
++def main(args):
++    # Construct the configuration dictionary from the argparse namespace
++    config = vars(args)
++
++    logger.info("Configuration:")
++    for key, value in config.items():
++        logger.info(f"{key}: {value}")
++
++    model = compile(SBRNet(config))
++
++    trainer = Trainer(model, config)
++
++    logger.info("Starting training...")
++
++    trainer.train()
++
++    logger.info("Training complete.")
++
++
++if __name__ == "__main__":
++    parser = argparse.ArgumentParser(
++        description="Train SBRNet with command-line parameters."
++    )
++
++    # paths
++    parser.add_argument(
++        "--dataset_pq",
++        type=str,
++        required=True,
++        help="Path to the Parquet dataset file.",
++    )
++    parser.add_argument(
++        "--model_dir", type=str, required=True, help="Directory to save trained models."
++    )
++    parser.add_argument(
++        "--scattering",
++        type=str,
++        default="scat",
++        choices=["scat", "free"],
++        help="whether to use scattering or free space data.",
++    )
++
++    # training stuff
++    parser.add_argument(
++        "--train_split",
++        type=float,
++        default=0.8,
++        help="The ratio of training set split.",
++    )
++    parser.add_argument(
++        "--batch_size", type=int, default=16, help="Batch size for training."
++    )
++    parser.add_argument(
++        "--learning_rate",
++        type=float,
++        default=0.001,
++        help="Learning rate for the optimizer.",
++    )
++    parser.add_argument(
++        "--epochs", type=int, default=20000, help="Number of epochs for training."
++    )
++    parser.add_argument(
++        "--backbone", type=str, default="resnet", help="The backbone network type."
++    )
++    parser.add_argument(
++        "--resnet_channels",
++        type=int,
++        default=48,
++        help="Number of channels in resnet backbone.",
++    )
++    parser.add_argument(
++        "--resnext_cardinality",
++        type=int,
++        default=32,
++        help="cardinality in resnext backbone.",
++    )
++    parser.add_argument(
++        "--weight_init",
++        type=str,
++        default="kaiming_normal",
++        help="Weight initialization method.",
++    )
++    parser.add_argument(
++        "--random_seed", type=int, default=42, help="Seed for random number generators."
++    )
++    parser.add_argument("--optimizer", type=str, default="adam", help="Optimizer type.")
++    parser.add_argument(
++        "--criterion_name",
++        type=str,
++        default="bce_with_logits",
++        help="Criterion name for the loss function.",
++    )
++    parser.add_argument(
++        "--output_activation",
++        type=str,
++        default="sigmoid",
++        choices=["sigmoid", "relu", "none"],
++        help="output activation for quantile heads.",
++    )
++    parser.add_argument(
++        "--use_amp",
++        type=bool,
++        default=True,
++        help="Whether to use automatic mixed precision or not.",
++    )
++    parser.add_argument(
++        "--lr_scheduler",
++        type=str,
++        default="cosine_annealing_with_warm_restarts",
++        help="Learning rate scheduler type.",
++    )
++    parser.add_argument(
++        "--weight_decay",
++        type=float,
++        default=0.0001,
++        help="network weight decay regularization parameter.",
++    )
++    parser.add_argument(
++        "--cosine_annealing_T_max",
++        type=int,
++        default=100,
++        help="Maximum number of iterations for cosine annealing scheduler.",
++    )
++    parser.add_argument(
++        "--q_lo",
++        type=float,
++        default=0.05,
++        help="lower quantile for quantile regression loss.",
++    )
++    parser.add_argument(
++        "--q_hi",
++        type=float,
++        default=0.95,
++        help="upper quantile for quantile regression loss.",
++    )
++    parser.add_argument(
++        "--qlo_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++    parser.add_argument(
++        "--qhi_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++    parser.add_argument(
++        "--point_loss_weight",
++        type=float,
++        default=1,
++        help="weight for loss term for point prediction.",
++    )
++
++    # model stuff
++    parser.add_argument(
++        "--num_gt_layers", type=int, default=24, help="Number of ground truth layers."
++    )
++    parser.add_argument(
++        "--num_lf_views",
++        type=int,
++        default=9,
++        help="Number of light field views. Not being used in code though.",
++    )
++    parser.add_argument(
++        "--num_rfv_layers", type=int, default=24, help="Number of RFV layers."
++    )
++    parser.add_argument(
++        "--num_resblocks", type=int, default=15, help="Number of residual blocks."
++    )
++    parser.add_argument(
++        "--patch_size", type=int, default=224, help="Size of the patch."
++    )
++    parser.add_argument(
++        "--last_layer",
++        type=str,
++        default="quantile_heads",
++        help="whether to do UQ with conformal pred or not.",
++    )
++    parser.add_argument(
++        "--num_head_layers",
++        type=int,
++        default=3,
++        help="number of conv layers for the head.",
++    )
++    parser.add_argument(
++        "--view_ind",
++        type=int,
++        default=15,
++        help="view combo index  from constants.py",
++    )
++
++    # calibrated parameters for poisson-gaussian noise model
++    parser.add_argument(
++        "--A_STD",
++        type=float,
++        default=5.7092e-5,
++        help="Standard deviation of A for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--A_MEAN",
++        type=float,
++        default=1.49e-4,
++        help="Mean of A for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--B_STD",
++        type=float,
++        default=2.7754e-6,
++        help="Standard deviation of B for poisson-gaussian noise model.",
++    )
++    parser.add_argument(
++        "--B_MEAN",
++        type=float,
++        default=5.41e-6,
++        help="Mean of B for poisson-gaussian noise model.",
++    )
++
++    # Parse the arguments
++    args = parser.parse_args()
++
++    main(args)
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/config.yaml b/wandb/run-20240414_215121-8bhztaye/files/config.yaml
+new file mode 100644
+index 0000000..58ed732
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/config.yaml
+@@ -0,0 +1,135 @@
++wandb_version: 1
++
++dataset_pq:
++  desc: null
++  value: /ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq
++model_dir:
++  desc: null
++  value: /projectnb/tianlabdl/rjbona/trained_models/
++scattering:
++  desc: null
++  value: scat
++train_split:
++  desc: null
++  value: 0.8
++batch_size:
++  desc: null
++  value: 20
++learning_rate:
++  desc: null
++  value: 0.001
++epochs:
++  desc: null
++  value: 20000
++backbone:
++  desc: null
++  value: resnet
++resnet_channels:
++  desc: null
++  value: 48
++resnext_cardinality:
++  desc: null
++  value: 32
++weight_init:
++  desc: null
++  value: kaiming_normal
++random_seed:
++  desc: null
++  value: 42
++optimizer:
++  desc: null
++  value: adam
++criterion_name:
++  desc: null
++  value: bce_with_logits
++output_activation:
++  desc: null
++  value: sigmoid
++use_amp:
++  desc: null
++  value: true
++lr_scheduler:
++  desc: null
++  value: cosine_annealing
++weight_decay:
++  desc: null
++  value: 0.0
++cosine_annealing_T_max:
++  desc: null
++  value: 30
++q_lo:
++  desc: null
++  value: 0.5
++q_hi:
++  desc: null
++  value: 0.95
++qlo_weight:
++  desc: null
++  value: 1.0
++qhi_weight:
++  desc: null
++  value: 1.0
++point_loss_weight:
++  desc: null
++  value: 1.0
++num_gt_layers:
++  desc: null
++  value: 24
++num_lf_views:
++  desc: null
++  value: 9
++num_rfv_layers:
++  desc: null
++  value: 24
++num_resblocks:
++  desc: null
++  value: 18
++patch_size:
++  desc: null
++  value: 128
++last_layer:
++  desc: null
++  value: quantile_heads
++num_head_layers:
++  desc: null
++  value: 1
++view_ind:
++  desc: null
++  value: 15
++A_STD:
++  desc: null
++  value: 5.7092e-05
++A_MEAN:
++  desc: null
++  value: 0.000149
++B_STD:
++  desc: null
++  value: 2.7754e-06
++B_MEAN:
++  desc: null
++  value: 5.41e-06
++_wandb:
++  desc: null
++  value:
++    code_path: code/sbrnet_core/sbrnet/main.py
++    python_version: 3.10.12
++    cli_version: 0.16.5
++    framework: torch
++    is_jupyter_run: false
++    is_kaggle_kernel: false
++    start_time: 1713145881.0
++    t:
++      1:
++      - 1
++      - 55
++      2:
++      - 1
++      - 55
++      3:
++      - 16
++      - 23
++      4: 3.10.12
++      5: 0.16.5
++      8:
++      - 5
++      13: linux-x86_64
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/diff.patch b/wandb/run-20240414_215121-8bhztaye/files/diff.patch
+new file mode 100644
+index 0000000..926c5a4
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/diff.patch
+@@ -0,0 +1,117 @@
++diff --git a/sbrnet_core/sbrnet/main.py b/sbrnet_core/sbrnet/main.py
++index 010ad1d..82129dd 100644
++--- a/sbrnet_core/sbrnet/main.py
+++++ b/sbrnet_core/sbrnet/main.py
++@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
++ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++ 
++ # Define the log file path with the timestamp
++-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
+++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++ 
++ # Configure logging to write log messages to the file
++ logging.basicConfig(filename=log_file_path, level=logging.INFO)
++@@ -208,7 +208,7 @@ if __name__ == "__main__":
++     parser.add_argument(
++         "--view_ind",
++         type=int,
++-        default=1,
+++        default=15,
++         help="view combo index  from constants.py",
++     )
++ 
++diff --git a/sbrnet_core/sbrnet/trainer.py b/sbrnet_core/sbrnet/trainer.py
++index 05f085b..ce9c830 100644
++--- a/sbrnet_core/sbrnet/trainer.py
+++++ b/sbrnet_core/sbrnet/trainer.py
++@@ -48,6 +48,7 @@ class Trainer:
++         config: dict,
++     ):
++         self.config = config
+++        wandb.init(project="rjbona_sbrnet", config=self.config)
++         self.model = model
++         self.noise_model = PoissonGaussianNoiseModel(config)
++         self.learning_rate = config["learning_rate"]
++@@ -66,11 +67,9 @@ class Trainer:
++         self.lr_scheduler_name = config.get("lr_scheduler", "cosine_annealing")
++         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++ 
++-        if not os.path.exists(self.model_dir):
++-            os.makedirs(self.model_dir)
++-
++         logger.debug(f"Using device: {self.device}")
++-        wandb.log({"device": self.device})
+++        device_string = f'{self.device}'
+++        wandb.log({"device": device_string})
++         self.scaler = (
++             GradScaler() if self.use_amp else None
++         )  # Initialize the scaler if using AMP
++@@ -185,7 +184,6 @@ class Trainer:
++         return scheduler
++ 
++     def train(self):
++-        wandb.init(project="rjbona_sbrnet", config=self.config)
++         logger.info(f"View index: {self.config['view_ind']}")
++         wandb.log({"view_index": self.config["view_ind"]})
++         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
++diff --git a/scripts/array_train.qsub b/scripts/array_train.qsub
++index 9e83f16..7f5c22e 100644
++--- a/scripts/array_train.qsub
+++++ b/scripts/array_train.qsub
++@@ -30,8 +30,6 @@ echo "=========================================================="
++ #$-l gpu_c=7.0
++ #$ -l gpu_memory=16G
++ 
++-#numresblocks, lr, lr scheduler
++-#sge cloud computing, wandb
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++@@ -39,21 +37,21 @@ module load miniconda
++ source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py \
++   --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
++-  --batch_size 20 \
++-  --num_resblocks 18 \ 
++-  --view_ind 15 \
++-  --point_loss_weight 1 \
++-  --qlo_weight 1 \
++-  --qhi_weight 1 \
++-  --learning_rate 0.001 \ 
++-  --lr_scheduler "cosine_annealing" \ 
+++  --batch_size 20\
+++  --num_resblocks 18\
+++  --view_ind 15\
+++  --point_loss_weight 1\
+++  --qlo_weight 1\
+++  --qhi_weight 1\
+++  --learning_rate 0.001\
+++  --lr_scheduler "cosine_annealing"\
++   --last_layer "quantile_heads" \
++-  --cosine_annealing_T_max 30 \
++-  --num_head_layers 1 \
++-  --weight_decay 0 \
++-  --optimizer "adam" \
++-  --q_lo 0.5 \
++-  --q_hi 0.95 \
+++  --cosine_annealing_T_max 30\
+++  --num_head_layers 1\
+++  --weight_decay 0\
+++  --optimizer "adam"\
+++  --q_lo 0.5\
+++  --q_hi 0.95\
++   --output_activation "sigmoid" \
++   --backbone "resnet" \
++   --patch_size 128 \
++diff --git a/scripts/run_array_train.sh b/scripts/run_array_train.sh
++index fade18d..b35fb33 100755
++--- a/scripts/run_array_train.sh
+++++ b/scripts/run_array_train.sh
++@@ -1,4 +1,7 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_array_training_${timestamp}"
++ 
+++#sweep_config = "/projectnb/tianlabdl/rjbona/sbrnet/configs_deprecated/sweep_config.yaml"
+++#wandb sweep $sweep_config
+++
++ qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/array_train.qsub
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/requirements.txt b/wandb/run-20240414_215121-8bhztaye/files/requirements.txt
+new file mode 100644
+index 0000000..5e09073
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/requirements.txt
+@@ -0,0 +1,103 @@
++GitPython==3.1.42
++Jinja2==3.1.3
++MarkupSafe==2.1.5
++PyYAML==6.0.1
++Pygments==2.17.2
++aiosignal==1.3.1
++appdirs==1.4.4
++asciitree==0.3.3
++asttokens==2.4.1
++attrs==23.2.0
++certifi==2024.2.2
++charset-normalizer==3.3.2
++click==8.1.7
++comm==0.2.2
++contourpy==1.2.0
++cramjam==2.8.2
++cycler==0.12.1
++debugpy==1.8.1
++decorator==5.1.1
++docker-pycreds==0.4.0
++exceptiongroup==1.2.0
++executing==2.0.1
++fasteners==0.19
++fastparquet==2024.2.0
++filelock==3.13.1
++fonttools==4.50.0
++frozenlist==1.4.1
++fsspec==2024.3.0
++gitdb==4.0.11
++idna==3.6
++imageio==2.34.0
++ipykernel==6.29.3
++ipython==8.22.2
++jedi==0.19.1
++jsonschema-specifications==2023.12.1
++jsonschema==4.21.1
++jupyter_client==8.6.1
++jupyter_core==5.7.2
++kiwisolver==1.4.5
++lazy_loader==0.3
++matplotlib-inline==0.1.6
++matplotlib==3.8.3
++mpmath==1.3.0
++msgpack==1.0.8
++nest-asyncio==1.6.0
++networkx==3.2.1
++numcodecs==0.12.1
++numpy==1.26.4
++nvidia-cublas-cu12==12.1.3.1
++nvidia-cuda-cupti-cu12==12.1.105
++nvidia-cuda-nvrtc-cu12==12.1.105
++nvidia-cuda-runtime-cu12==12.1.105
++nvidia-cudnn-cu12==8.9.2.26
++nvidia-cufft-cu12==11.0.2.54
++nvidia-curand-cu12==10.3.2.106
++nvidia-cusolver-cu12==11.4.5.107
++nvidia-cusparse-cu12==12.1.0.106
++nvidia-nccl-cu12==2.19.3
++nvidia-nvjitlink-cu12==12.4.99
++nvidia-nvtx-cu12==12.1.105
++packaging==24.0
++pandas==2.2.1
++parso==0.8.3
++pexpect==4.9.0
++pillow==10.2.0
++pip==23.1.2
++platformdirs==4.2.0
++prompt-toolkit==3.0.43
++protobuf==4.25.3
++psutil==5.9.8
++ptyprocess==0.7.0
++pure-eval==0.2.2
++pyarrow==15.0.1
++pyparsing==3.1.2
++python-dateutil==2.9.0.post0
++pytz==2024.1
++pyzmq==25.1.2
++ray==2.9.3
++referencing==0.34.0
++requests==2.31.0
++rpds-py==0.18.0
++sbrnet-core==0.1
++scikit-image==0.22.0
++scipy==1.12.0
++sentry-sdk==1.44.0
++setproctitle==1.3.3
++setuptools==67.8.0
++six==1.16.0
++smmap==5.0.1
++stack-data==0.6.3
++sympy==1.12
++tifffile==2024.2.12
++torch==2.2.1
++tornado==6.4
++traitlets==5.14.2
++triton==2.2.0
++typing_extensions==4.10.0
++tzdata==2024.1
++urllib3==2.2.1
++wandb==0.16.5
++wcwidth==0.2.13
++wheel==0.40.0
++zarr==2.17.1
+\ No newline at end of file
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch b/wandb/run-20240414_215121-8bhztaye/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch
+new file mode 100644
+index 0000000..f63ceae
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/upstream_diff_4cb33f00464764630f0d0849fb5033aafa43ac59.patch
+@@ -0,0 +1,347 @@
++diff --git a/sbrnet_core/sbrnet/dataset.py b/sbrnet_core/sbrnet/dataset.py
++index 5b5cd3b..02b229d 100644
++--- a/sbrnet_core/sbrnet/dataset.py
+++++ b/sbrnet_core/sbrnet/dataset.py
++@@ -34,7 +34,7 @@ class CustomDataset(Dataset):
++         """
++ 
++         stack = (
++-            imread(self.df[f"stack_{self.scattering}_path"].iloc[index]).astype(
+++            imread(self.df[f"stack_{self.scattering}_path"].iloc[0]).astype(
++                 np.float32
++             )
++             / 0xFFFF
++@@ -42,14 +42,14 @@ class CustomDataset(Dataset):
++         stack = torch.from_numpy(stack)
++ 
++         rfv = (
++-            imread(self.df[f"rfv_{self.scattering}_path"].iloc[index]).astype(
+++            imread(self.df[f"rfv_{self.scattering}_path"].iloc[0]).astype(
++                 np.float32
++             )
++             / 0xFFFF
++         )
++         rfv = torch.from_numpy(rfv)
++ 
++-        gt = imread(self.df["gt_path"].iloc[index]).astype(np.float32) / 0xFFFF
+++        gt = imread(self.df["gt_path"].iloc[0]).astype(np.float32) / 0xFFFF
++         gt = torch.from_numpy(gt)
++ 
++         return stack, rfv, gt
++@@ -69,7 +69,7 @@ class ZarrData:
++     # NOTE: ensure cache is larger than number of items
++     @cache
++     def __getitem__(self, index: int):
++-        path = self.df[self.datatype + self.pattern].iloc[index]
+++        path = self.df[self.datatype + self.pattern].iloc[0]
++         with TiffFile(path) as img:
++             return zarr.open(img.aszarr())
++ 
++diff --git a/sbrnet_core/sbrnet/losses/quantile_loss.py b/sbrnet_core/sbrnet/losses/quantile_loss.py
++index b7d031e..b602a7a 100644
++--- a/sbrnet_core/sbrnet/losses/quantile_loss.py
+++++ b/sbrnet_core/sbrnet/losses/quantile_loss.py
++@@ -58,7 +58,7 @@ class QuantileLoss(nn.Module):
++                 f"Unknown loss criterion: {params['criterion_name']}. Using BCEWithLogitsLoss."
++             )
++ 
++-        self.slice_q_lo = slice(0, params["num_gt_layers"])
+++        self.slice_q_lo = slice(0, params["num_gt_layers"]) #add bce weight here
++         self.slice_q_hi = slice(params["num_gt_layers"], params["num_gt_layers"] * 2)
++         self.slice_point = slice(params["num_gt_layers"] * 2, None)
++ 
++@@ -79,6 +79,7 @@ class QuantileLoss(nn.Module):
++         qlo_loss = self.qlo_weight * self.q_lo_loss(
++             self.output_activation(pred[:, self.slice_q_lo, :, :]), target
++         )
+++        #add another loss function to help, bce
++         point_pred_loss = self.point_weight * self.point_loss(
++             pred[:, self.slice_point, :, :], target
++         )
++diff --git a/sbrnet_core/sbrnet/main.py b/sbrnet_core/sbrnet/main.py
++index 010ad1d..82129dd 100644
++--- a/sbrnet_core/sbrnet/main.py
+++++ b/sbrnet_core/sbrnet/main.py
++@@ -12,7 +12,7 @@ from sbrnet_core.sbrnet.trainer import Trainer
++ current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
++ 
++ # Define the log file path with the timestamp
++-log_file_path = f"/projectnb/tianlabdl/jalido/sbrnet_proj/.log/logging/sbrnet_train_{current_time}.log"
+++log_file_path = f"/projectnb/tianlabdl/rjbona/sbrnet/.log/logging/sbrnet_train_{current_time}.log"
++ 
++ # Configure logging to write log messages to the file
++ logging.basicConfig(filename=log_file_path, level=logging.INFO)
++@@ -208,7 +208,7 @@ if __name__ == "__main__":
++     parser.add_argument(
++         "--view_ind",
++         type=int,
++-        default=1,
+++        default=15,
++         help="view combo index  from constants.py",
++     )
++ 
++diff --git a/sbrnet_core/sbrnet/trainer.py b/sbrnet_core/sbrnet/trainer.py
++index a30b66c..ce9c830 100644
++--- a/sbrnet_core/sbrnet/trainer.py
+++++ b/sbrnet_core/sbrnet/trainer.py
++@@ -22,6 +22,7 @@ from sbrnet_core.sbrnet.calibration.rcps import get_preds
++ 
++ from matplotlib.pyplot import subplots
++ import matplotlib.pyplot as plt
+++import wandb
++ 
++ 
++ now = datetime.datetime.now()
++@@ -47,6 +48,7 @@ class Trainer:
++         config: dict,
++     ):
++         self.config = config
+++        wandb.init(project="rjbona_sbrnet", config=self.config)
++         self.model = model
++         self.noise_model = PoissonGaussianNoiseModel(config)
++         self.learning_rate = config["learning_rate"]
++@@ -65,10 +67,9 @@ class Trainer:
++         self.lr_scheduler_name = config.get("lr_scheduler", "cosine_annealing")
++         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
++ 
++-        if not os.path.exists(self.model_dir):
++-            os.makedirs(self.model_dir)
++-
++         logger.debug(f"Using device: {self.device}")
+++        device_string = f'{self.device}'
+++        wandb.log({"device": device_string})
++         self.scaler = (
++             GradScaler() if self.use_amp else None
++         )  # Initialize the scaler if using AMP
++@@ -90,6 +91,7 @@ class Trainer:
++                 self.criterion = nn.BCEWithLogitsLoss()
++         self.train_data_loader, self.val_data_loader = self._get_dataloaders()
++         logger.info(f"Loss criterion: {self.criterion}")
+++        wandb.log({"loss_criterion": self.criterion})
++ 
++     def _get_dataloaders(self) -> Tuple[DataLoader, DataLoader]:
++         def split_dataset(dataset, split_ratio):
++@@ -183,6 +185,7 @@ class Trainer:
++ 
++     def train(self):
++         logger.info(f"View index: {self.config['view_ind']}")
+++        wandb.log({"view_index": self.config["view_ind"]})
++         model_name = f"sbrnet_view_{self.config['view_ind']}_v0.pt"
++         model_save_path = os.path.join(self.model_dir, model_name)
++ 
++@@ -198,6 +201,7 @@ class Trainer:
++             model_name = f"sbrnet_view_{self.config['view_ind']}_v{version}"
++             model_save_path = os.path.join(self.model_dir, model_name + ".pt")
++         logger.info(f"Model save path: {model_save_path}")
+++        wandb.log({"model_save_path": model_save_path})
++         torch.save(self.config, model_save_path)
++         self.model.to(self.device)
++         self.noise_model.to(self.device)
++@@ -209,6 +213,7 @@ class Trainer:
++ 
++         if self.use_amp:
++             logger.info("Using mixed-precision training with AMP.")
+++            wandb.log({"AMP": True})
++ 
++         for epoch in range(self.epochs):
++             self.model.train()
++@@ -271,8 +276,16 @@ class Trainer:
++             logger.info(
++                 f"Epoch [{epoch + 1}/{self.epochs}], Train Loss: {avg_train_loss}"
++             )
+++            wandb.log(
+++                {
+++                    "epoch": epoch + 1,
+++                    "train_loss": avg_train_loss,
+++                    "qlo_train_loss": avg_qlo_loss,
+++                    "qhi_train_loss": avg_qhi_loss,
+++                }
+++            )
++             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
++-
+++            wandb.log({"time_elapsed": time.time() - start_time})
++             val_loss, val_qlo_loss, val_qhi_loss = self.validate()
++ 
++             self.validation_losses.append(val_loss)
++@@ -282,8 +295,16 @@ class Trainer:
++             logger.info(
++                 f"Epoch [{epoch + 1}/{self.epochs}], Validation Loss: {val_loss}"
++             )
+++            wandb.log(
+++                {
+++                    "epoch": epoch + 1,
+++                    "val_loss": val_loss,
+++                    "qlo_val_loss": val_qlo_loss,
+++                    "qhi_val_loss": val_qhi_loss,
+++                }
+++            )
++             logger.info(f"Time elapsed: {time.time() - start_time} seconds")
++-
+++            wandb.log({"time_elapsed": time.time() - start_time})
++             if self.lr_scheduler_name == "plateau":
++                 scheduler.step(
++                     val_loss
++@@ -310,7 +331,7 @@ class Trainer:
++ 
++                 torch.save(save_state, model_save_path)
++                 logger.info("Model saved at epoch {}".format(epoch + 1))
++-
+++                wandb.log({"model_epoch_saved": epoch + 1})
++                 # rough draft for saving a visualization of the model prediction. could be better.
++                 cal_data = cal_data = CustomDataset(self.config)
++                 stack, rfv, gt = cal_data[0]
++@@ -346,8 +367,9 @@ class Trainer:
++                 fig.suptitle(f"epoch {epoch}")
++                 fig.colorbar(im3, ax=axs[1])
++                 fig_save_fol = (
++-                    "/projectnb/tianlabdl/jalido/sbrnet_proj/training_visualization/"
+++                    "/projectnb/tianlabdl/rjbona/sbrnet/training_visualization/"
++                 )
+++                wandb.log({"Visualization": fig})
++                 fig_save_path = os.path.join(
++                     fig_save_fol, f"{model_name}.png"
++                 )
++diff --git a/scripts/array_train.qsub b/scripts/array_train.qsub
++index b1121d1..7f5c22e 100644
++--- a/scripts/array_train.qsub
+++++ b/scripts/array_train.qsub
++@@ -6,10 +6,10 @@
++ # Specify hard time limit for the job. 
++ #   The job will be aborted if it runs longer than this time.
++ #   The default time is 12 hours
++-#$ -l h_rt=48:00:00
+++#$ -l h_rt=12:00:00
++ 
++ # folder where the output of the qsub job is saved
++-#$ -o /projectnb/tianlabdl/jalido/.log/.qlog
+++#$ -o /projectnb/tianlabdl/rjbona/.log/.qlog
++ 
++ # Combine output and error files into a single file
++ #$ -j y
++@@ -33,28 +33,29 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
++-  --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
++-  --batch_size 20 \
++-  --num_resblocks 18 \
++-  --view_ind $SGE_TASK_ID \
++-  --point_loss_weight 100000 \
++-  --qlo_weight 1 \
++-  --qhi_weight 1 \
++-  --learning_rate 0.00001 \
++-  --lr_scheduler "cosine_annealing" \
+++#conda activate /projectnb/tianlabdl/rjbona/sbrnet/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py \
+++  --model_dir "/projectnb/tianlabdl/rjbona/trained_models/" \
+++  --batch_size 20\
+++  --num_resblocks 18\
+++  --view_ind 15\
+++  --point_loss_weight 1\
+++  --qlo_weight 1\
+++  --qhi_weight 1\
+++  --learning_rate 0.001\
+++  --lr_scheduler "cosine_annealing"\
++   --last_layer "quantile_heads" \
++-  --cosine_annealing_T_max 30 \
++-  --num_head_layers 2 \
++-  --weight_decay 0 \
++-  --optimizer "adam" \
++-  --q_lo 0.05 \
++-  --q_hi 0.95 \
+++  --cosine_annealing_T_max 30\
+++  --num_head_layers 1\
+++  --weight_decay 0\
+++  --optimizer "adam"\
+++  --q_lo 0.5\
+++  --q_hi 0.95\
++   --output_activation "sigmoid" \
++   --backbone "resnet" \
++   --patch_size 128 \
++-  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/$SGE_TASK_ID/metadata.pq" \
+++  --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq" \
++   # --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/metadata.pq" \
++   # 
++   # --criterion_name "mae"
++\ No newline at end of file
++diff --git a/scripts/calibrate.qsub b/scripts/calibrate.qsub
++index d6ec4b6..197b7d4 100644
++--- a/scripts/calibrate.qsub
+++++ b/scripts/calibrate.qsub
++@@ -33,5 +33,6 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/calibration/firstdraft.py
++\ No newline at end of file
+++#conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/calibration/firstdraft.py
++\ No newline at end of file
++diff --git a/scripts/gen_syn_data.qsub b/scripts/gen_syn_data.qsub
++index f20aac6..526c642 100644
++--- a/scripts/gen_syn_data.qsub
+++++ b/scripts/gen_syn_data.qsub
++@@ -26,9 +26,9 @@ echo "=========================================================="
++ 
++ 
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ # speficy the directory to save data, the number of data pairs, and the sbr range
++-python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/synthetic_data/main.py \
+++python /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/synthetic_data/main.py \
++     --out_dir "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/vasc/$SGE_TASK_ID/" \
++     --gt_path "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/gtbeads/" \
++     --lower_sbr 1.05 \
++diff --git a/scripts/run_array_train.sh b/scripts/run_array_train.sh
++index cdacd72..b35fb33 100755
++--- a/scripts/run_array_train.sh
+++++ b/scripts/run_array_train.sh
++@@ -1,4 +1,7 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_array_training_${timestamp}"
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/array_train.qsub
+++#sweep_config = "/projectnb/tianlabdl/rjbona/sbrnet/configs_deprecated/sweep_config.yaml"
+++#wandb sweep $sweep_config
+++
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/array_train.qsub
++diff --git a/scripts/run_gen_syn_data.sh b/scripts/run_gen_syn_data.sh
++index 11869e8..f4c0695 100755
++--- a/scripts/run_gen_syn_data.sh
+++++ b/scripts/run_gen_syn_data.sh
++@@ -2,5 +2,5 @@ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_synthetic_data_gen_${timestamp}"
++ 
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/gen_syn_data.qsub
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/scripts/gen_syn_data.qsub
++ 
++diff --git a/scripts/run_train.sh b/scripts/run_train.sh
++index 64e0575..4f2f2a3 100755
++--- a/scripts/run_train.sh
+++++ b/scripts/run_train.sh
++@@ -1,4 +1,4 @@
++ timestamp=$(date +"%Y%m%d%H%M%S")
++ jobname="sbrnet_training_${timestamp}"
++ 
++-qsub -N "${jobname}" -o "/projectnb/tianlabdl/jalido/sbrnet_proj/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/jalido/sbrnet_proj/scripts/train.qsub
+++qsub -N "${jobname}" -o "/projectnb/tianlabdl/rjbona/sbrnet/.log/qsubs/${jobname}.qlog" /projectnb/tianlabdl/rjbona/sbrnet/scripts/train.qsub
++diff --git a/scripts/train.qsub b/scripts/train.qsub
++index 0352431..975e302 100644
++--- a/scripts/train.qsub
+++++ b/scripts/train.qsub
++@@ -32,7 +32,7 @@ echo "=========================================================="
++ # module load python3/3.8.10
++ # source /projectnb2/tianlabdl/venvs/syn_vasc_env/bin/activate
++ module load miniconda
++-conda activate /projectnb/tianlabdl/jalido/sbrnet_proj/.direnv
+++source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
++ python /projectnb/tianlabdl/jalido/sbrnet_proj/sbrnet_core/sbrnet/main.py \
++   --dataset_pq "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/3/metadata.pq" \
++   --model_dir "/projectnb/tianlabdl/jalido/sbrnet_proj/trained_models/" \
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/wandb-metadata.json b/wandb/run-20240414_215121-8bhztaye/files/wandb-metadata.json
+new file mode 100644
+index 0000000..a5b8ba2
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/wandb-metadata.json
+@@ -0,0 +1,261 @@
++{
++    "os": "Linux-4.18.0-513.9.1.el8_9.x86_64-x86_64-with-glibc2.28",
++    "python": "3.10.12",
++    "heartbeatAt": "2024-04-15T01:51:21.501339",
++    "startedAt": "2024-04-15T01:51:21.170084",
++    "docker": null,
++    "cuda": null,
++    "args": [
++        "--model_dir",
++        "/projectnb/tianlabdl/rjbona/trained_models/",
++        "--batch_size",
++        "20",
++        "--num_resblocks",
++        "18",
++        "--view_ind",
++        "15",
++        "--point_loss_weight",
++        "1",
++        "--qlo_weight",
++        "1",
++        "--qhi_weight",
++        "1",
++        "--learning_rate",
++        "0.001",
++        "--lr_scheduler",
++        "cosine_annealing",
++        "--last_layer",
++        "quantile_heads",
++        "--cosine_annealing_T_max",
++        "30",
++        "--num_head_layers",
++        "1",
++        "--weight_decay",
++        "0",
++        "--optimizer",
++        "adam",
++        "--q_lo",
++        "0.5",
++        "--q_hi",
++        "0.95",
++        "--output_activation",
++        "sigmoid",
++        "--backbone",
++        "resnet",
++        "--patch_size",
++        "128",
++        "--dataset_pq",
++        "/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"
++    ],
++    "state": "running",
++    "program": "/projectnb/tianlabdl/rjbona/sbrnet/sbrnet_core/sbrnet/main.py",
++    "codePathLocal": "sbrnet_core/sbrnet/main.py",
++    "codePath": "sbrnet_core/sbrnet/main.py",
++    "git": {
++        "remote": "git@github.com:bu-cisl/sbrnet.git",
++        "commit": "a3b38aeb81ecbc49a69f80ec3bcd809eebee563d"
++    },
++    "email": "rjbona@bu.edu",
++    "root": "/projectnb/tianlabdl/rjbona/sbrnet",
++    "host": "scc-j02",
++    "username": "rjbona",
++    "executable": "/projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/python",
++    "cpu_count": 32,
++    "cpu_count_logical": 32,
++    "cpu_freq": {
++        "current": 4055.7435625,
++        "min": 800.0,
++        "max": 4100.0
++    },
++    "cpu_freq_per_core": [
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 3660.532,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 3656.286,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 3877.468,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 3789.508,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        },
++        {
++            "current": 4100.0,
++            "min": 800.0,
++            "max": 4100.0
++        }
++    ],
++    "disk": {
++        "/": {
++            "total": 19.518142700195312,
++            "used": 13.305763244628906
++        }
++    },
++    "gpu": "NVIDIA L40S",
++    "gpu_count": 4,
++    "gpu_devices": [
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        },
++        {
++            "name": "NVIDIA L40S",
++            "memory_total": 48305799168
++        }
++    ],
++    "memory": {
++        "total": 250.89939498901367
++    }
++}
+diff --git a/wandb/run-20240414_215121-8bhztaye/files/wandb-summary.json b/wandb/run-20240414_215121-8bhztaye/files/wandb-summary.json
+new file mode 100644
+index 0000000..fe84ee6
+--- /dev/null
++++ b/wandb/run-20240414_215121-8bhztaye/files/wandb-summary.json
+@@ -0,0 +1 @@
++{"device": "cuda", "_timestamp": 1713189075.5629225, "_runtime": 43194.38078355789, "_step": 12802, "loss_criterion": "QuantileLoss(\n  (point_loss): BCEWithLogitsLoss()\n)", "view_index": 15, "model_save_path": "/projectnb/tianlabdl/rjbona/trained_models/sbrnet_view_15_v22.pt", "AMP": true, "epoch": 3051, "train_loss": 0.00036738511553267015, "qlo_train_loss": 8.473075504298322e-05, "qhi_train_loss": 1.3838581594427523e-06, "time_elapsed": 43193.52605032921, "val_loss": 0.00027438377146609126, "qlo_val_loss": 6.326018192339688e-05, "qhi_val_loss": 1.1001846587532782e-06, "model_epoch_saved": 2972, "Visualization": {"_type": "image-file", "sha256": "6f728fb6b0fffd04c9f478cc0ba7e5702fb6b265e673504e86aeb33bee2373b2", "size": 98027, "path": "media/images/Visualization_12488_6f728fb6b0fffd04c9f4.png", "format": "png", "width": 1500, "height": 1500}}
+\ No newline at end of file
+diff --git a/wandb/run-20240414_215121-8bhztaye/run-8bhztaye.wandb b/wandb/run-20240414_215121-8bhztaye/run-8bhztaye.wandb
+new file mode 100644
+index 0000000..d352f29
+Binary files /dev/null and b/wandb/run-20240414_215121-8bhztaye/run-8bhztaye.wandb differ

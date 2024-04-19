@@ -1,10 +1,10 @@
 name: initial_sbrnet_test_sweep
-method: grid
+method: random
 
 parameters:
   learning_rate:
-    values: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1]
+    values: [0.00001, 0.0001, 0.001]
   lr_scheduler:
-    values: [cosine_annealing, cosine_annealing_with_warm_restarts, step_lr, plateau]
+    values: [cosine_annealing, cosine_annealing_with_warm_restarts, step_lr]
   num_resblocks:
-    values: [14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36]
+    values: [14, 22, 24, 32]
