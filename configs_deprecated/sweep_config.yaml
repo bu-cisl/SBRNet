@@ -1,5 +1,8 @@
-name: "initial_sbrnet_test_sweep"
+program: sbrnet_core/sbrnet/main.py
 method: "grid"
+metric:
+  name: qlo_val_loss
+  goal: minimize
 
 parameters:
   learning_rate:
@@ -7,48 +10,36 @@ parameters:
   lr_scheduler:
     values: ["cosine_annealing", "cosine_annealing_with_warm_restarts", "step_lr"]
   num_resblocks:
-    values: [14, 22, 24, 32]
+    values: [14, 22]
   model_dir:
-    values: "/projectnb/tianlabdl/rjbona/trained_models/"
+    value: ["/projectnb/tianlabdl/rjbona/trained_models/"]
   batch_size:
-    values: 20
-  num_resblocks:
-    values: 18
+    value: [20]
   view_ind:
-    values: 15
+    value: [15]
   point_loss_weight:
-    values: 1
-  model_dir:
-    values: ["/projectnb/tianlabdl/rjbona/trained_models/"]
-  batch_size:
-    values: [20]
-  num_resblocks:
-    values: [18]
-  view_ind:
-    values: [15]
-  point_loss_weight:
-    values: [1]
+    value: [1]
   qlo_weight:
-    values: [1]
+    value: [1]
   qhi_weight:
-    values: [1]
+    value: [1]
   cosine_annealing_T_max:
-    values: [30]
+    value: [30]
   num_head_layers:
-    values: [1]
+    value: [1]
   weight_decay:
-    values: [0]
+    value: [0]
   optimizer:
-    values: ["adam"]
+    value: ["adam"]
   q_lo:
-    values: [0.5]
+    value: [0.5]
   q_hi:
-    values: [0.95]
+    value: [0.95]
   output_activation:
-    values: ["sigmoid"]
+    value: ["sigmoid"]
   backbone:
-    values: ["resnet"]
+    value: ["resnet"]
   patch_size:
-    values: [128]
+    value: [128]
   dataset_pq:
-    values: ["/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"]
+    value: ["/ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq"]

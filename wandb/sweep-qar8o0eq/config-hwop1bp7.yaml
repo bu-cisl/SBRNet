@@ -1,0 +1,56 @@
+wandb_version: 1
+
+backbone:
+  value:
+  - resnet
+batch_size:
+  value:
+  - 20
+cosine_annealing_T_max:
+  value:
+  - 30
+dataset_pq:
+  value:
+  - /ad/eng/research/eng_research_cisl/jalido/sbrnet/data/training_data/UQ/15/metadata.pq
+learning_rate:
+  value: 0.0001
+lr_scheduler:
+  value: step_lr
+model_dir:
+  value:
+  - /projectnb/tianlabdl/rjbona/trained_models/
+num_head_layers:
+  value:
+  - 1
+num_resblocks:
+  value: 22
+optimizer:
+  value:
+  - adam
+output_activation:
+  value:
+  - sigmoid
+patch_size:
+  value:
+  - 128
+point_loss_weight:
+  value:
+  - 1
+q_hi:
+  value:
+  - 0.95
+q_lo:
+  value:
+  - 0.5
+qhi_weight:
+  value:
+  - 1
+qlo_weight:
+  value:
+  - 1
+view_ind:
+  value:
+  - 15
+weight_decay:
+  value:
+  - 0

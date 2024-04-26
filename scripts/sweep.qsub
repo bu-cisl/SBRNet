@@ -35,4 +35,4 @@ echo "=========================================================="
 module load miniconda
 #conda activate /projectnb/tianlabdl/rjbona/sbrnet/.direnv
 source /projectnb/tianlabdl/rjbona/sbrnet/.direnv/bin/activate
-wandb agent --count 1 cisl-bu/sbrnet/i6sjoft6
+wandb agent --count 1 cisl-bu/sbrnet/f8doanlw
